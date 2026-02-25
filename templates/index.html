@@ -118,7 +118,8 @@
             background: white;
             border-radius: 8px;
             border: 1px solid var(--gray-100);
-            overflow: hidden;
+            overflow-y: auto;
+            max-height: 300px;
         }
         .file-list:empty { display: none; }
 
@@ -272,7 +273,8 @@
             background: white;
             border-radius: 8px;
             border: 1px solid var(--gray-100);
-            overflow: hidden;
+            overflow-y: auto;
+            max-height: 400px;
         }
         .doc-row, .scraped-doc-row {
             display: flex;
@@ -380,7 +382,7 @@
         }
         .scrape-panel-header h2 { flex: 1; color: var(--uri-blue); font-size: 20px; }
 
-        .source-cards { display: flex; flex-direction: column; gap: 10px; }
+        .source-cards { display: flex; flex-direction: column; gap: 10px; max-height: 400px; overflow-y: auto; }
         .source-card {
             background: white;
             border: 1px solid var(--gray-100);

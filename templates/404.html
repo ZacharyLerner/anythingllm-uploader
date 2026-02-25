@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Workspace Not Found</title>
+    <style>
+        :root {
+            --uri-blue: #002147;
+            --uri-blue-light: #2277b3;
+            --uri-gold: #B5985A;
+            --error: #c41e3a;
+            --gray-50: #f5f7fa;
+            --gray-600: #666;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: var(--gray-50);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .error-container {
+            text-align: center;
+            max-width: 500px;
+        }
+
+        .error-icon {
+            width: 120px;
+            height: 120px;
+            background: linear-gradient(135deg, var(--uri-blue) 0%, var(--uri-blue-light) 100%);
+            border-radius: 50%;
+            margin: 0 auto 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 56px;
+            box-shadow: 0 8px 32px rgba(0, 33, 71, 0.2);
+        }
+
+        .error-code {
+            font-size: 72px;
+            font-weight: 700;
+            color: var(--uri-blue);
+            line-height: 1;
+            margin-bottom: 8px;
+        }
+
+        .error-title {
+            font-size: 24px;
+            color: var(--uri-blue);
+            margin-bottom: 16px;
+        }
+
+        .error-message {
+            color: var(--gray-600);
+            font-size: 16px;
+            line-height: 1.6;
+            margin-bottom: 32px;
+        }
+
+        .workspace-slug {
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            color: var(--error);
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-family: 'SF Mono', Monaco, monospace;
+            font-size: 14px;
+            display: inline-block;
+            margin-bottom: 32px;
+            word-break: break-all;
+        }
+
+        .suggestions {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            text-align: left;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+        }
+
+        .suggestions h3 {
+            color: var(--uri-blue);
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 16px;
+        }
+
+        .suggestions ul {
+            list-style: none;
+        }
+
+        .suggestions li {
+            color: var(--gray-600);
+            font-size: 14px;
+            padding: 8px 0;
+            padding-left: 24px;
+            position: relative;
+        }
+
+        .suggestions li::before {
+            content: "→";
+            position: absolute;
+            left: 0;
+            color: var(--uri-gold);
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="error-container">
+        <div class="error-code">ERROR:</div>
+        <h1 class="error-title">Workspace Not Found</h1>
+        <p class="error-message">
+            The workspace you're looking for doesn't exist or may have been deleted.
+        </p>
+        <div class="workspace-slug">{{ workspace }}</div>
+        <div class="suggestions">
+            <h3>What you can do</h3>
+            <ul>
+                <li>Check that the workspace slug is spelled correctly</li>
+                <li>Ensure you are going through the correct link on "link area"</li>
+            </ul>
+        </div>
+    </div>
+</body>
+</html>

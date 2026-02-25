@@ -1,0 +1,1756 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rhody AI Knowledge Base Upload - {{ workspace }}</title>
+    <style>
+        /* =============================================================
+           CSS VARIABLES
+           ============================================================= */
+        :root {
+            --uri-blue: #002147;
+            --uri-blue-light: #2277b3;
+            --uri-gold: #B5985A;
+            --success: #22c55e;
+            --error: #c41e3a;
+            --gray-50: #f5f7fa;
+            --gray-100: #e5e9ef;
+            --gray-600: #666;
+        }
+
+        /* =============================================================
+           RESET & BASE
+           ============================================================= */
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: var(--gray-50);
+            padding: 40px 20px;
+            line-height: 1.5;
+        }
+
+        .container { max-width: 900px; margin: 0 auto; }
+
+        h1 { color: var(--uri-blue); margin-bottom: 16px; font-size: 28px; }
+
+        /* =============================================================
+           WORKSPACE INFO BAR
+           ============================================================= */
+        .config-info {
+            background: #e8f4f8;
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin-bottom: 16px;
+            font-size: 14px;
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+        .config-info code {
+            background: #d0e8f0;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-family: 'SF Mono', Monaco, monospace;
+        }
+
+        /* =============================================================
+           ERROR BANNER  (shown briefly on failures)
+           ============================================================= */
+        .error-banner {
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            color: var(--error);
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        /* =============================================================
+           UPLOAD DROP ZONE
+           ============================================================= */
+        .upload-area {
+            background: white;
+            border: 1.5px dashed var(--uri-blue-light);
+            border-radius: 8px;
+            padding: 24px 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .upload-area:hover       { border-color: var(--uri-blue); background: #f8fafc; }
+        .upload-area.dragover    { border-color: var(--uri-gold); background: #fefdf8; }
+        .upload-area p           { color: var(--uri-blue); font-size: 14px; }
+        .upload-area .hint       { font-size: 12px; color: var(--gray-600); margin-top: 4px; }
+        input[type="file"]       { display: none; }
+
+        /* =============================================================
+           BUTTONS  (shared)
+           ============================================================= */
+        .btn {
+            background: var(--uri-blue-light);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: background 0.2s;
+        }
+        .btn:hover           { background: var(--uri-blue); }
+        .btn.danger          { background: var(--error); }
+        .btn.danger:hover    { background: #a01830; }
+        .btn.secondary       { background: var(--uri-blue); }
+        .btn.small           { padding: 6px 12px; font-size: 12px; }
+        .btn.success         { background: var(--success); }
+        .btn.success:hover   { background: #16a34a; }
+        .btn.gold            { background: var(--uri-gold); }
+        .btn.gold:hover      { background: #a08550; }
+
+        /* =============================================================
+           FILE UPLOAD PROGRESS LIST
+           ============================================================= */
+        .file-list {
+            margin-top: 12px;
+            background: white;
+            border-radius: 8px;
+            border: 1px solid var(--gray-100);
+            overflow: hidden;
+        }
+        .file-list:empty { display: none; }
+
+        .file-item {
+            padding: 8px 12px;
+            border-bottom: 1px solid var(--gray-100);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .file-item:last-child { border-bottom: none; }
+        .file-name            { font-weight: 500; font-size: 13px; color: var(--uri-blue); }
+
+        /* Individual step badges (Convert / Upload / Embed) */
+        .progress-steps { display: flex; gap: 6px; align-items: center; }
+        .progress-step {
+            padding: 4px 10px;
+            border-radius: 4px;
+            background: var(--gray-100);
+            color: var(--gray-600);
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .progress-step.active { background: var(--uri-gold); color: white; }
+        .progress-step.done   { background: var(--success); color: white; }
+        .progress-step.error  { background: var(--error); color: white; }
+
+        .upload-warning {
+            display: none;
+            text-align: center;
+            color: var(--error);
+            font-size: 13px;
+            font-weight: 500;
+            padding: 8px 0;
+        }
+
+        /* =============================================================
+           SECTION HEADERS  (Uploaded / Scraped Documents)
+           ============================================================= */
+        .section-divider { border: none; border-top: 2px solid var(--gray-100); margin: 32px 0 24px; }
+
+        .documents {
+            padding-top: 16px;
+        }
+        .doc-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 12px;
+            gap: 12px;
+        }
+        .doc-header h2 { flex: 1; color: var(--uri-blue); font-size: 20px; }
+
+        /* =============================================================
+           COLLAPSIBLE SECTIONS
+           ============================================================= */
+        .collapse-toggle {
+            background: none;
+            border: 1px solid var(--gray-100);
+            border-radius: 6px;
+            cursor: pointer;
+            padding: 4px 10px;
+            font-size: 13px;
+            color: var(--gray-600);
+            transition: all 0.15s;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .collapse-toggle:hover { background: #f1f5f9; border-color: var(--uri-blue-light); color: var(--uri-blue); }
+        .collapse-toggle .chevron {
+            display: inline-block;
+            transition: transform 0.15s ease;
+            font-size: 11px;
+        }
+        .collapse-toggle.collapsed .chevron { transform: rotate(-90deg); }
+
+        .collapsible-body {
+            overflow: hidden;
+            transition: max-height 0.15s ease-out, opacity 0.1s ease-out;
+            max-height: 5000px;
+            opacity: 1;
+        }
+        .collapsible-body.collapsed {
+            max-height: 0;
+            opacity: 0;
+            transition: max-height 0.15s ease-in, opacity 0.1s ease-in;
+        }
+
+        /* =============================================================
+           SEARCH & FILTER BAR  (shared between sections)
+           ============================================================= */
+        .doc-toolbar {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+        .doc-search-wrap { position: relative; }
+        .doc-search-wrap .search-icon {
+            position: absolute; left: 12px; top: 50%;
+            transform: translateY(-50%);
+            font-size: 14px; color: var(--gray-600); pointer-events: none;
+        }
+        .doc-search {
+            width: 100%;
+            padding: 9px 36px 9px 34px;
+            border: 1px solid var(--gray-100);
+            border-radius: 6px;
+            font-size: 14px;
+            font-family: inherit;
+            outline: none;
+            transition: border-color 0.2s;
+            background: white;
+        }
+        .doc-search:focus { border-color: var(--uri-blue-light); }
+
+        .search-clear {
+            position: absolute; right: 8px; top: 50%;
+            transform: translateY(-50%);
+            background: none; border: none; cursor: pointer;
+            font-size: 16px; color: var(--gray-600);
+            padding: 2px 6px; border-radius: 4px;
+            display: none; line-height: 1;
+        }
+        .search-clear:hover { background: var(--gray-100); }
+
+        /* Filter pills (file-type or category) */
+        .filter-pills { display: flex; gap: 6px; flex-wrap: wrap; }
+        .filter-pill {
+            padding: 4px 12px;
+            border-radius: 20px;
+            border: 1px solid var(--gray-100);
+            background: white;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            color: var(--gray-600);
+            transition: all 0.15s;
+            line-height: 1.4;
+        }
+        .filter-pill:hover  { border-color: var(--uri-blue-light); color: var(--uri-blue); }
+        .filter-pill.active { background: var(--uri-blue); color: white; border-color: var(--uri-blue); }
+        .filter-pill .pill-count { display: inline-block; margin-left: 4px; opacity: 0.7; }
+
+        /* =============================================================
+           DOCUMENT TABLE ROWS  (uploaded and scraped share these)
+           ============================================================= */
+        .doc-table {
+            display: flex;
+            flex-direction: column;
+            background: white;
+            border-radius: 8px;
+            border: 1px solid var(--gray-100);
+            overflow: hidden;
+        }
+        .doc-row, .scraped-doc-row {
+            display: flex;
+            align-items: center;
+            padding: 8px 12px;
+            gap: 10px;
+            border-bottom: 1px solid var(--gray-100);
+            cursor: pointer;
+            transition: background 0.1s;
+        }
+        .doc-row:last-child, .scraped-doc-row:last-child { border-bottom: none; }
+        .doc-row:hover, .scraped-doc-row:hover           { background: #f8fafc; }
+        .doc-row.selected, .scraped-doc-row.selected     { background: #e8f4f8; }
+
+        .doc-row input[type="checkbox"],
+        .scraped-doc-row input[type="checkbox"] {
+            width: 16px; height: 16px;
+            cursor: pointer; accent-color: var(--uri-blue); flex-shrink: 0;
+        }
+
+        .doc-row-icon {
+            flex-shrink: 0; width: 22px; height: 22px;
+            background: var(--uri-blue); border-radius: 4px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 12px;
+        }
+        .doc-row-name, .scraped-doc-title {
+            flex: 1; min-width: 0;
+            font-size: 13px; color: var(--uri-blue); font-weight: 500;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .doc-row-ext {
+            flex-shrink: 0; font-size: 11px; color: var(--gray-600);
+            background: var(--gray-100); padding: 2px 8px; border-radius: 4px;
+            font-weight: 500; text-transform: uppercase;
+        }
+        .scraped-doc-url {
+            flex-shrink: 0; font-size: 11px; color: var(--gray-600);
+            max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .scraped-doc-category-badge {
+            flex-shrink: 0; padding: 2px 8px; border-radius: 10px;
+            font-size: 11px; font-weight: 500;
+            background: #e8f4f8; color: var(--uri-blue);
+        }
+
+        /* Inline delete button inside rows */
+        .delete-btn {
+            flex-shrink: 0; background: none; color: var(--gray-600);
+            border: none; padding: 4px 8px; border-radius: 4px;
+            cursor: pointer; font-size: 12px; font-weight: 500;
+            transition: all 0.15s;
+        }
+        .delete-btn:hover { background: #fef2f2; color: var(--error); }
+
+        .doc-count { font-size: 12px; color: var(--gray-600); padding: 6px 0; }
+        .empty-state { text-align: center; padding: 48px; color: var(--gray-600); }
+
+        /* =============================================================
+           DELETE LOADING OVERLAY
+           ============================================================= */
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .delete-overlay {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(255,255,255,0.85);
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            z-index: 9999; gap: 12px;
+        }
+        .delete-overlay .spinner {
+            width: 32px; height: 32px;
+            border: 3px solid var(--gray-100);
+            border-top-color: var(--uri-blue);
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+        }
+        .delete-overlay .delete-msg { font-size: 14px; font-weight: 600; color: var(--gray-600); }
+
+        /* =============================================================
+           MODAL  (duplicate-file confirmation)
+           ============================================================= */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.5);
+            display: flex; align-items: center; justify-content: center;
+            z-index: 1000;
+        }
+        .modal {
+            background: white; border-radius: 12px; padding: 28px;
+            max-width: 440px; width: 90%;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.2);
+        }
+        .modal h3   { color: var(--error); margin-bottom: 12px; font-size: 18px; }
+        .modal p     { color: #333; font-size: 14px; margin-bottom: 20px; line-height: 1.6; }
+        .modal p code { background: var(--gray-100); padding: 2px 6px; border-radius: 4px; font-family: 'SF Mono', Monaco, monospace; font-size: 13px; }
+        .modal-actions { display: flex; justify-content: flex-end; gap: 10px; }
+
+        /* =============================================================
+           SCRAPE SOURCE CARDS & FORM
+           ============================================================= */
+        .scrape-panel { margin-top: 24px; }
+        .scrape-panel-header {
+            display: flex; align-items: center; margin-bottom: 12px; gap: 12px;
+        }
+        .scrape-panel-header h2 { flex: 1; color: var(--uri-blue); font-size: 20px; }
+
+        .source-cards { display: flex; flex-direction: column; gap: 10px; }
+        .source-card {
+            background: white;
+            border: 1px solid var(--gray-100);
+            border-radius: 8px;
+            padding: 14px 16px;
+            transition: border-color 0.2s;
+        }
+        .source-card:hover { border-color: var(--uri-blue-light); }
+
+        .source-card-top   { display: flex; align-items: flex-start; gap: 12px; }
+        .source-card-info  { flex: 1; min-width: 0; }
+        .source-card-url   { font-size: 14px; font-weight: 600; color: var(--uri-blue); word-break: break-all; }
+        .source-card-meta  { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 6px; font-size: 12px; color: var(--gray-600); }
+        .source-card-meta span { display: inline-flex; align-items: center; gap: 4px; }
+        .source-card-actions   { display: flex; gap: 6px; flex-shrink: 0; }
+        .source-card-actions .btn { padding: 6px 12px; font-size: 12px; }
+
+        /* Status badges on source cards */
+        .source-badge {
+            display: inline-block; padding: 2px 8px;
+            border-radius: 10px; font-size: 11px; font-weight: 600;
+        }
+        .source-badge.category         { background: #e8f4f8; color: var(--uri-blue); }
+        .source-badge.schedule         { background: #fef3e2; color: #b45309; }
+        .source-badge.depth            { background: var(--gray-100); color: var(--gray-600); }
+        .source-badge.status-running   { background: #fef3e2; color: #b45309; animation: pulse-badge 1.5s ease-in-out infinite; }
+        .source-badge.status-completed { background: #dcfce7; color: #166534; }
+        .source-badge.status-failed    { background: #fef2f2; color: var(--error); }
+        .source-badge.status-pending   { background: #e8f4f8; color: var(--uri-blue-light); }
+
+        @keyframes pulse-badge { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+
+        /* Add / Edit source forms */
+        .add-source-form {
+            display: none; background: white;
+            border: 1px solid var(--uri-blue-light);
+            border-radius: 8px; padding: 16px; margin-bottom: 12px;
+        }
+        .add-source-form.visible { display: block; }
+
+        .form-row   { display: flex; gap: 12px; margin-bottom: 10px; flex-wrap: wrap; }
+        .form-group { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 150px; }
+        .form-group.full-width { flex-basis: 100%; }
+        .form-group label { font-size: 12px; font-weight: 600; color: var(--uri-blue); }
+        .required-star    { color: #dc2626; margin-left: 2px; }
+
+        .form-group input, .form-group select {
+            padding: 8px 10px;
+            border: 1px solid var(--gray-100);
+            border-radius: 6px;
+            font-size: 14px;
+            font-family: inherit;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        .form-group input:focus, .form-group select:focus { border-color: var(--uri-blue-light); }
+        .form-group input.field-error, .form-group select.field-error { border-color: #dc2626; }
+
+        .form-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
+
+        .edit-form-inline { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--gray-100); }
+
+        /* =============================================================
+           CRAWL MODE SEGMENTED CONTROL
+           ============================================================= */
+        .crawl-mode-toggle {
+            display: inline-flex;
+            border: 1px solid var(--gray-100);
+            border-radius: 6px;
+            overflow: hidden;
+            background: var(--gray-50);
+        }
+        .crawl-mode-toggle label {
+            padding: 7px 14px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            color: var(--gray-600);
+            transition: all 0.15s;
+            border-right: 1px solid var(--gray-100);
+            user-select: none;
+        }
+        .crawl-mode-toggle label:last-child { border-right: none; }
+        .crawl-mode-toggle input[type="radio"] { display: none; }
+        .crawl-mode-toggle input[type="radio"]:checked + label {
+            background: var(--uri-blue);
+            color: white;
+        }
+
+        /* Prefix tags input */
+        .prefix-tags-wrap {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            padding: 5px 8px;
+            border: 1px solid var(--gray-100);
+            border-radius: 6px;
+            background: white;
+            min-height: 36px;
+            align-items: center;
+            cursor: text;
+            transition: border-color 0.2s;
+        }
+        .prefix-tags-wrap:focus-within { border-color: var(--uri-blue-light); }
+        .prefix-tags-wrap.field-error  { border-color: #dc2626; }
+        .prefix-tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 2px 8px;
+            background: #e8f4f8;
+            color: var(--uri-blue);
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .prefix-tag .remove-tag {
+            cursor: pointer;
+            font-size: 14px;
+            line-height: 1;
+            color: var(--gray-600);
+            margin-left: 2px;
+        }
+        .prefix-tag .remove-tag:hover { color: var(--error); }
+        .prefix-tags-input {
+            border: none;
+            outline: none;
+            font-size: 13px;
+            font-family: inherit;
+            flex: 1;
+            min-width: 120px;
+            padding: 2px 0;
+        }
+    </style>
+</head>
+<body>
+    <!-- ============================================================
+         PAGE STRUCTURE
+         ============================================================ -->
+    <div class="container">
+        <h1>Knowledge Base Upload</h1>
+
+        <div class="config-info">
+            <span><strong>Workspace:</strong> <code>{{ workspace }}</code></span>
+        </div>
+
+        <div class="error-banner" id="errorBanner"></div>
+
+        <!-- ========== FILE DROP ZONE ========== -->
+        <div class="upload-area" id="dropZone">
+            <p>&#128193; Drop files here or click this box to upload documents</p>
+            <p class="hint">Supported: PDF, DOCX, PPTX, XLSX, Images, HTML, Markdown, and more</p>
+            <input type="file" id="fileInput" multiple>
+        </div>
+
+        <div class="file-list" id="fileList"></div>
+        <div class="upload-warning" id="uploadWarning">Do not close this page while files are uploading.</div>
+
+        <!-- ========== UPLOADED DOCUMENTS ========== -->
+        <div class="documents">
+            <div class="doc-header">
+                <h2>Uploaded Documents</h2>
+                <button class="collapse-toggle" id="uploadedCollapseBtn" data-target="uploadedBody">
+                    <span class="chevron">&#9660;</span> Collapse
+                </button>
+                <button class="btn secondary" id="selectAllBtn" style="display:none;">Select All</button>
+                <button class="btn danger" id="deleteSelectedBtn" style="display:none;">
+                    Delete Selected (<span id="selectedCount">0</span>)
+                </button>
+            </div>
+            <div class="collapsible-body" id="uploadedBody">
+                <div class="doc-toolbar" id="docToolbar" style="display:none;">
+                    <div class="doc-search-wrap">
+                        <span class="search-icon">&#128269;</span>
+                        <input type="text" class="doc-search" id="docSearch" placeholder="Search documents...">
+                        <button class="search-clear" id="searchClear">&times;</button>
+                    </div>
+                    <div class="filter-pills" id="filterPills"></div>
+                </div>
+                <div class="doc-count" id="docCount"></div>
+                <div class="doc-table" id="docList">
+                    <div class="empty-state">Loading...</div>
+                </div>
+            </div>
+        </div>
+
+        <hr class="section-divider">
+
+        <!-- ========== SCRAPED DOCUMENTS ========== -->
+        <div class="scraped-documents">
+            <div class="doc-header">
+                <h2>Website Downloads</h2>
+                <button class="collapse-toggle" id="scrapedCollapseBtn" data-target="scrapedBody">
+                    <span class="chevron">&#9660;</span> Collapse
+                </button>
+                <button class="btn secondary" id="scrapeSelectAllBtn" style="display:none;">Select All</button>
+                <button class="btn danger" id="scrapeDeleteSelectedBtn" style="display:none;">
+                    Delete Selected (<span id="scrapeSelectedCount">0</span>)
+                </button>
+            </div>
+            <div class="collapsible-body" id="scrapedBody">
+                <div class="doc-toolbar" id="scrapeDocToolbar" style="display:none;">
+                    <div class="doc-search-wrap">
+                        <span class="search-icon">&#128269;</span>
+                        <input type="text" class="doc-search" id="scrapeDocSearch" placeholder="Search scraped documents...">
+                        <button class="search-clear" id="scrapeSearchClear">&times;</button>
+                    </div>
+                    <div class="filter-pills" id="scrapeCategoryPills"></div>
+                </div>
+                <div class="doc-count" id="scrapeDocCount"></div>
+                <div class="doc-table" id="scrapeDocList">
+                    <div class="empty-state">No websites downloaded yet. Add a source below to start downloading.</div>
+                </div>
+            </div>
+        </div>
+
+        <hr class="section-divider">
+
+        <!-- ========== SCRAPE SOURCES ========== -->
+        <div class="scrape-panel">
+            <div class="scrape-panel-header">
+                <h2>Website Sources</h2>
+                <button class="btn" id="addSourceToggleBtn">+ Add Source</button>
+            </div>
+
+            <!-- Add-source form (hidden by default) -->
+            <div class="add-source-form" id="addSourceForm">
+                <div class="form-row">
+                    <div class="form-group full-width">
+                        <label for="sourceUrl">Website URL</label>
+                        <input type="url" id="sourceUrl" placeholder="https://example.com/docs">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="sourceCategory">Category <span class="required-star">*</span></label>
+                        <input type="text" id="sourceCategory" placeholder="e.g. IT Docs, HR Policies">
+                    </div>
+                    <div class="form-group">
+                        <label>Crawl Mode <span class="required-star">*</span></label>
+                        <div class="crawl-mode-toggle">
+                            <input type="radio" name="sourceCrawlMode" id="crawlModeDepth" value="depth" checked>
+                            <label for="crawlModeDepth">Depth-based</label>
+                            <input type="radio" name="sourceCrawlMode" id="crawlModePrefix" value="prefix">
+                            <label for="crawlModePrefix">Prefix-based</label>
+                        </div>
+                    </div>
+                    <!-- Depth-based fields -->
+                    <div class="form-group" id="depthGroup">
+                        <label for="sourceDepth">Crawl Depth <span class="required-star">*</span></label>
+                        <select id="sourceDepth">
+                            <option value="1">1 - Original page only</option>
+                            <option value="2" selected>2 - Original + linked pages</option>
+                            <option value="3">3 - Two levels deep</option>
+                            <option value="4">4 - Three levels deep</option>
+                            <option value="5">5 - Four levels deep</option>
+                        </select>
+                    </div>
+                    <!-- Prefix-based fields (hidden by default) -->
+                    <div class="form-group" id="prefixGroup" style="display:none; min-width:220px;">
+                        <label>Allowed Prefixes <span class="required-star">*</span></label>
+                        <div class="prefix-tags-wrap" id="sourcePrefixTags">
+                            <input type="text" class="prefix-tags-input" id="sourcePrefixInput" placeholder="e.g. /enrollment/ then Enter">
+                        </div>
+                    </div>
+                    <div class="form-group" id="maxPagesGroup" style="display:none;">
+                        <label for="sourceMaxPages">Max Pages</label>
+                        <input type="number" id="sourceMaxPages" value="500" min="1" max="10000">
+                    </div>
+                    <div class="form-group">
+                        <label for="sourceSchedule">Schedule <span class="required-star">*</span></label>
+                        <select id="sourceSchedule">
+                            <option value="" disabled selected>Select schedule...</option>
+                            <option value="manual">Manual only</option>
+                            <option value="daily">Daily</option>
+                            <option value="weekly">Weekly</option>
+                            <option value="monthly">Monthly</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-actions">
+                    <button class="btn secondary" id="cancelSourceBtn">Cancel</button>
+                    <button class="btn success" id="saveSourceBtn">Save Source</button>
+                </div>
+            </div>
+
+            <div class="source-cards" id="sourceCards">
+                <div class="empty-state">No scrape sources configured yet.</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================================
+         JAVASCRIPT
+         ============================================================ -->
+    <script>
+    /* =================================================================
+       GLOBAL CONSTANTS & STATE
+       ================================================================= */
+    const WORKSPACE = {{ workspace|tojson }};
+    const API_BASE  = `/${WORKSPACE}`;
+    const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100 MB (mirrors server limit)
+
+    /* =================================================================
+       DOM REFERENCES
+       ================================================================= */
+    const $  = (id) => document.getElementById(id);
+    const errorBanner   = $('errorBanner');
+    const dropZone      = $('dropZone');
+    const fileInput     = $('fileInput');
+    const fileList      = $('fileList');
+    const uploadWarning = $('uploadWarning');
+
+    /* =================================================================
+       UTILITY HELPERS
+       ================================================================= */
+
+    /** HTML-escape a string to prevent XSS when inserting into innerHTML. */
+    function escapeHtml(text) {
+        const el = document.createElement('div');
+        el.textContent = text;
+        return el.innerHTML;
+    }
+
+    /** Show a red error banner for 5 seconds. */
+    function showError(msg) {
+        errorBanner.textContent = msg;
+        errorBanner.style.display = 'block';
+        setTimeout(() => { errorBanner.style.display = 'none'; }, 5000);
+    }
+
+    /** Extract file extension (e.g. ".pdf") from a filename. */
+    function getFileExt(name) {
+        const dot = name.lastIndexOf('.');
+        return dot > 0 ? name.slice(dot).toLowerCase() : '';
+    }
+
+    /** Format an ISO date string as a relative time label. */
+    function formatRelativeTime(dateStr) {
+        if (!dateStr) return 'Never';
+        const date = new Date(dateStr + (dateStr.includes('Z') ? '' : 'Z'));
+        const diffMs   = Date.now() - date.getTime();
+        const diffMins = Math.floor(diffMs / 60000);
+        const diffHrs  = Math.floor(diffMs / 3600000);
+        const diffDays = Math.floor(diffMs / 86400000);
+        if (diffMins < 1)  return 'just now';
+        if (diffMins < 60) return `${diffMins}m ago`;
+        if (diffHrs  < 24) return `${diffHrs}h ago`;
+        if (diffDays < 30) return `${diffDays}d ago`;
+        return date.toLocaleDateString();
+    }
+
+    function capitalize(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : ''; }
+
+    /** Shorten a URL for display. */
+    function truncateUrl(url) {
+        try {
+            const u = new URL(url);
+            const p = u.pathname;
+            return p.length > 30 ? u.hostname + p.slice(0, 27) + '...' : u.hostname + p;
+        } catch { return url.length > 40 ? url.slice(0, 37) + '...' : url; }
+    }
+
+    /* =================================================================
+       DELETE OVERLAY  (full-screen spinner during batch operations)
+       ================================================================= */
+    function showDeleteOverlay(msg) {
+        const el = document.createElement('div');
+        el.className = 'delete-overlay';
+        el.id = 'deleteOverlay';
+        el.innerHTML = `<div class="spinner"></div><div class="delete-msg">${msg}</div>`;
+        document.body.appendChild(el);
+    }
+    function hideDeleteOverlay() {
+        const el = $('deleteOverlay');
+        if (el) el.remove();
+    }
+
+    /* =================================================================
+       COLLAPSIBLE SECTION TOGGLES
+       ================================================================= */
+    document.querySelectorAll('.collapse-toggle').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const body = $(btn.dataset.target);
+            const collapsed = body.classList.toggle('collapsed');
+            btn.classList.toggle('collapsed', collapsed);
+            btn.querySelector('.chevron').innerHTML = '&#9660;';
+            btn.childNodes[btn.childNodes.length - 1].textContent =
+                collapsed ? ' Expand' : ' Collapse';
+        });
+    });
+
+    /* =================================================================
+       DocSection -- REUSABLE DOCUMENT LIST MANAGER
+       ---------------------------------------------------------------
+       Both "Uploaded Documents" and "Scraped Documents" share identical
+       search / filter / select-all / batch-delete / render logic.  This
+       class encapsulates all of it so we only write it once.
+       ================================================================= */
+    class DocSection {
+        /**
+         * @param {object} opts
+         * @param {HTMLElement} opts.listEl         - container for rendered rows
+         * @param {HTMLElement} opts.toolbarEl      - search + filter bar wrapper
+         * @param {HTMLElement} opts.countEl        - "Showing X of Y" label
+         * @param {HTMLInputElement} opts.searchEl  - the search <input>
+         * @param {HTMLElement} opts.clearEl        - the "x" clear button
+         * @param {HTMLElement} opts.pillsEl        - filter-pill container
+         * @param {HTMLElement} opts.selectAllBtn
+         * @param {HTMLElement} opts.deleteBtn      - "Delete Selected (N)" button
+         * @param {HTMLElement} opts.deleteCountEl  - the <span> inside deleteBtn
+         * @param {string}   opts.emptyText         - placeholder when no data
+         * @param {Function} opts.getFilterKey      - (item) => string for filter pills
+         * @param {Function} opts.matchesSearch     - (item, query) => bool
+         * @param {Function} opts.renderRow         - (item, isSelected) => HTML string
+         * @param {Function} opts.getItemId         - (item) => unique key for selection
+         * @param {string}   opts.rowSelector       - CSS selector to find rows in listEl
+         * @param {Function} opts.onDelete          - async (id) => void  for single delete
+         * @param {Function} opts.onBatchDelete     - async (ids) => void for batch delete
+         * @param {string}   opts.deleteNoun        - e.g. "document" or "scraped document"
+         */
+        constructor(opts) {
+            Object.assign(this, opts);
+            this.allItems     = [];
+            this.selected     = new Set();
+            this.activeFilter = null;
+            this._bind();
+        }
+
+        /** Wire up event listeners (called once in constructor). */
+        _bind() {
+            // Search input
+            this.searchEl.addEventListener('input', () => this.render());
+            this.clearEl.addEventListener('click', () => {
+                this.searchEl.value = '';
+                this.render();
+                this.searchEl.focus();
+            });
+            // Filter pills (delegation)
+            this.pillsEl.addEventListener('click', e => {
+                const pill = e.target.closest('.filter-pill');
+                if (!pill) return;
+                this.activeFilter = pill.dataset.filter || null;
+                this._renderPills();
+                this.render();
+            });
+            // Row clicks (delegation) -- select or delete
+            this.listEl.addEventListener('click', e => {
+                const row = e.target.closest(this.rowSelector);
+                if (!row) return;
+                const id = row.dataset.id ?? row.dataset.path;
+                if (e.target.closest('.delete-btn')) {
+                    this.onDelete(id);
+                } else {
+                    this._toggleSelect(id);
+                }
+            });
+            // Select-all button
+            this.selectAllBtn.addEventListener('click', () => this._selectAll());
+            // Batch-delete button
+            this.deleteBtn.addEventListener('click', () => this._batchDelete());
+        }
+
+        /** Replace internal data and re-render everything. */
+        setItems(items) {
+            this.allItems = items;
+            this.selected.clear();
+            this._renderPills();
+            this.render();
+        }
+
+        /** Return items that pass the current search + filter. */
+        _filtered() {
+            const q = this.searchEl.value.trim().toLowerCase();
+            return this.allItems.filter(item => {
+                if (q && !this.matchesSearch(item, q)) return false;
+                if (this.activeFilter && this.getFilterKey(item) !== this.activeFilter) return false;
+                return true;
+            });
+        }
+
+        /** Render filter pills based on current data. */
+        _renderPills() {
+            const counts = {};
+            this.allItems.forEach(item => {
+                const key = this.getFilterKey(item);
+                counts[key] = (counts[key] || 0) + 1;
+            });
+            const keys = Object.keys(counts).sort();
+            if (keys.length <= 1) { this.pillsEl.innerHTML = ''; return; }
+            // Reset filter if it no longer exists in data.
+            if (this.activeFilter && !counts[this.activeFilter]) this.activeFilter = null;
+            this.pillsEl.innerHTML =
+                `<button class="filter-pill ${!this.activeFilter ? 'active' : ''}" data-filter="">All<span class="pill-count">${this.allItems.length}</span></button>` +
+                keys.map(k =>
+                    `<button class="filter-pill ${this.activeFilter === k ? 'active' : ''}" data-filter="${escapeHtml(k)}">${escapeHtml(k.replace('.','').toUpperCase())}<span class="pill-count">${counts[k]}</span></button>`
+                ).join('');
+        }
+
+        /** Full re-render of the list, count, and selection UI. */
+        render() {
+            this._updateSelectionUI();
+            if (this.allItems.length === 0) {
+                this.listEl.innerHTML = `<div class="empty-state">${this.emptyText}</div>`;
+                this.selectAllBtn.style.display = 'none';
+                this.toolbarEl.style.display = 'none';
+                this.countEl.textContent = '';
+                return;
+            }
+            this.toolbarEl.style.display = 'flex';
+            this.selectAllBtn.style.display = 'inline-block';
+            this.clearEl.style.display = this.searchEl.value ? 'block' : 'none';
+
+            const filtered = this._filtered();
+            // Count label
+            if (this.searchEl.value || this.activeFilter) {
+                this.countEl.textContent = `Showing ${filtered.length} of ${this.allItems.length}`;
+            } else {
+                this.countEl.textContent = `${this.allItems.length} item${this.allItems.length !== 1 ? 's' : ''}`;
+            }
+            if (filtered.length === 0) {
+                this.listEl.innerHTML = '<div class="empty-state">No items match your search</div>';
+                return;
+            }
+            this.listEl.innerHTML = filtered.map(item =>
+                this.renderRow(item, this.selected.has(this.getItemId(item)))
+            ).join('');
+        }
+
+        _toggleSelect(id) {
+            // dataset values are always strings; coerce to number if getItemId
+            // returns numbers (check against the first item in allItems).
+            const key = this.allItems.length && typeof this.getItemId(this.allItems[0]) === 'number'
+                ? parseInt(id) : id;
+            if (this.selected.has(key)) this.selected.delete(key); else this.selected.add(key);
+            this.render();
+        }
+
+        _selectAll() {
+            const filtered = this._filtered();
+            const allSel = filtered.every(i => this.selected.has(this.getItemId(i)));
+            filtered.forEach(i => {
+                const id = this.getItemId(i);
+                allSel ? this.selected.delete(id) : this.selected.add(id);
+            });
+            this.render();
+        }
+
+        _updateSelectionUI() {
+            this.deleteCountEl.textContent = this.selected.size;
+            this.deleteBtn.style.display = this.selected.size > 0 ? 'inline-block' : 'none';
+            if (this.allItems.length > 0) {
+                const filtered = this._filtered();
+                const allSel = filtered.length > 0 && filtered.every(i => this.selected.has(this.getItemId(i)));
+                this.selectAllBtn.textContent = allSel ? 'Deselect All' : 'Select All';
+            }
+        }
+
+        async _batchDelete() {
+            const n = this.selected.size;
+            if (!confirm(`Delete ${n} ${this.deleteNoun}(s)?`)) return;
+            showDeleteOverlay(`Deleting ${n} ${this.deleteNoun}(s)...`);
+            try {
+                await this.onBatchDelete(Array.from(this.selected));
+            } catch (err) {
+                showError(`Failed to delete ${this.deleteNoun}s`);
+            } finally {
+                hideDeleteOverlay();
+            }
+            this.selected.clear();
+        }
+    }
+
+    /* =================================================================
+       UPLOADED DOCUMENTS SECTION
+       ================================================================= */
+
+    const uploadedSection = new DocSection({
+        listEl:        $('docList'),
+        toolbarEl:     $('docToolbar'),
+        countEl:       $('docCount'),
+        searchEl:      $('docSearch'),
+        clearEl:       $('searchClear'),
+        pillsEl:       $('filterPills'),
+        selectAllBtn:  $('selectAllBtn'),
+        deleteBtn:     $('deleteSelectedBtn'),
+        deleteCountEl: $('selectedCount'),
+        emptyText:     'No documents uploaded yet',
+        rowSelector:   '.doc-row',
+        deleteNoun:    'document',
+
+        getFilterKey:  (doc) => getFileExt(doc.filename) || '(no ext)',
+        matchesSearch: (doc, q) => doc.filename.toLowerCase().includes(q),
+        getItemId:     (doc) => doc.id,
+
+        renderRow: (doc, sel) => {
+            const ext = getFileExt(doc.filename);
+            const label = ext ? ext.replace('.','').toUpperCase() : '?';
+            return `
+                <div class="doc-row ${sel ? 'selected' : ''}" data-id="${doc.id}" data-path="${escapeHtml(doc.location)}">
+                    <input type="checkbox" ${sel ? 'checked' : ''}>
+                    <span class="doc-row-icon">&#128196;</span>
+                    <span class="doc-row-name" title="${escapeHtml(doc.filename)}">${escapeHtml(doc.filename)}</span>
+                    <span class="doc-row-ext">${escapeHtml(label)}</span>
+                    <button class="delete-btn">Delete</button>
+                </div>`;
+        },
+
+        onDelete: async (id) => {
+            if (!confirm('Delete this document?')) return;
+            showDeleteOverlay('Deleting document...');
+            try {
+                await fetch(`${API_BASE}/documents/${id}`, {
+                    method: 'DELETE',
+                });
+                loadDocuments();
+            } catch { showError('Failed to delete document'); }
+            finally { hideDeleteOverlay(); }
+        },
+
+        onBatchDelete: async (ids) => {
+            await fetch(`${API_BASE}/documents/batch`, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids: ids.map(Number) })
+            });
+            loadDocuments();
+        }
+    });
+
+    /** Fetch uploaded documents from server and refresh the list. */
+    async function loadDocuments() {
+        try {
+            const resp = await fetch(`${API_BASE}/documents?source_type=upload`);
+            uploadedSection.setItems(await resp.json());
+        } catch (err) {
+            console.error('Failed to load documents:', err);
+            $('docList').innerHTML = '<div class="empty-state">Failed to load documents</div>';
+        }
+    }
+
+    /* =================================================================
+       SCRAPED DOCUMENTS SECTION
+       ================================================================= */
+
+    const scrapedSection = new DocSection({
+        listEl:        $('scrapeDocList'),
+        toolbarEl:     $('scrapeDocToolbar'),
+        countEl:       $('scrapeDocCount'),
+        searchEl:      $('scrapeDocSearch'),
+        clearEl:       $('scrapeSearchClear'),
+        pillsEl:       $('scrapeCategoryPills'),
+        selectAllBtn:  $('scrapeSelectAllBtn'),
+        deleteBtn:     $('scrapeDeleteSelectedBtn'),
+        deleteCountEl: $('scrapeSelectedCount'),
+        emptyText:     'No scraped documents yet. Add a source below to start scraping.',
+        rowSelector:   '.scraped-doc-row',
+        deleteNoun:    'scraped document',
+
+        getFilterKey:  (doc) => doc.category,
+        matchesSearch: (doc, q) => (doc.title || '').toLowerCase().includes(q) || doc.source_url.toLowerCase().includes(q),
+        getItemId:     (doc) => doc.id,
+
+        renderRow: (doc, sel) => {
+            const title = doc.title || doc.source_url;
+            return `
+                <div class="scraped-doc-row ${sel ? 'selected' : ''}" data-id="${doc.id}">
+                    <input type="checkbox" ${sel ? 'checked' : ''}>
+                    <span class="doc-row-icon">&#127760;</span>
+                    <span class="scraped-doc-title" title="${escapeHtml(title)}">${escapeHtml(title)}</span>
+                    <span class="scraped-doc-category-badge">${escapeHtml(doc.category)}</span>
+                    <span class="scraped-doc-url" title="${escapeHtml(doc.source_url)}">${escapeHtml(truncateUrl(doc.source_url))}</span>
+                    <button class="delete-btn">Delete</button>
+                </div>`;
+        },
+
+        onDelete: async (id) => {
+            if (!confirm('Delete this scraped document?')) return;
+            showDeleteOverlay('Deleting scraped document...');
+            try {
+                await fetch(`${API_BASE}/documents/${id}`, {
+                    method: 'DELETE',
+                });
+                loadScrapedDocuments();
+                loadScrapeSources();
+            } catch { showError('Failed to delete scraped document'); }
+            finally { hideDeleteOverlay(); }
+        },
+
+        onBatchDelete: async (ids) => {
+            await fetch(`${API_BASE}/documents/batch`, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids: ids.map(Number) })
+            });
+            loadScrapedDocuments();
+            loadScrapeSources();
+        }
+    });
+
+    /** Fetch scraped documents from server and refresh the list. */
+    async function loadScrapedDocuments() {
+        try {
+            const resp = await fetch(`${API_BASE}/documents?source_type=scrape`);
+            scrapedSection.setItems(await resp.json());
+        } catch (err) {
+            console.error('Failed to load scraped documents:', err);
+            $('scrapeDocList').innerHTML = '<div class="empty-state">Failed to load scraped documents</div>';
+        }
+    }
+
+    /* =================================================================
+       FILE UPLOAD ENGINE  (drag-and-drop + SSE progress)
+       ================================================================= */
+
+    let fileRegistry = {};  // index -> File object (for duplicate-replace)
+    let fileCounter  = 0;
+    let uploadQueue  = [];
+    let isProcessing = false;
+
+    // --- Drag-and-drop handlers ---
+    ['dragenter','dragover','dragleave','drop'].forEach(evt =>
+        dropZone.addEventListener(evt, e => e.preventDefault()));
+    dropZone.addEventListener('dragover',  () => dropZone.classList.add('dragover'));
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+    dropZone.addEventListener('drop', e => {
+        dropZone.classList.remove('dragover');
+        handleFiles(e.dataTransfer.files);
+    });
+    dropZone.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', () => handleFiles(fileInput.files));
+
+    /** Queue selected files for sequential upload. */
+    function handleFiles(files) {
+        if (!files.length) return;
+        const arr = Array.from(files);
+        const start = fileCounter;
+
+        // Render progress rows
+        fileList.innerHTML += arr.map((f, i) => {
+            const idx = start + i;
+            fileRegistry[idx] = f;
+            return `
+                <div class="file-item" id="file-${idx}">
+                    <span class="file-name">${escapeHtml(f.name)}</span>
+                    <div class="progress-steps">
+                        <span class="progress-step" id="step-convert-${idx}">Convert</span>
+                        <span class="progress-step" id="step-upload-${idx}">Upload</span>
+                        <span class="progress-step" id="step-embed-${idx}">Embed</span>
+                    </div>
+                </div>`;
+        }).join('');
+
+        // Validate size and enqueue
+        arr.forEach((file, i) => {
+            const idx = start + i;
+            if (file.size > MAX_FILE_SIZE) {
+                setStep(idx, 'convert', 'error');
+                setStep(idx, 'upload', 'error');
+                setStep(idx, 'embed', 'error');
+                showError(`${file.name} exceeds the 100 MB size limit`);
+            } else {
+                uploadQueue.push({ file, index: idx });
+            }
+        });
+        fileCounter += arr.length;
+        processQueue();
+    }
+
+    /** Set a progress-step badge to a state (active / done / error / null). */
+    function setStep(index, step, status) {
+        const el = $(`step-${step}-${index}`);
+        if (!el) return;
+        el.classList.remove('active', 'done', 'error');
+        if (status) el.classList.add(status);
+    }
+
+    /** Prevent page close while uploads are in progress. */
+    function onBeforeUnload(e) { e.preventDefault(); e.returnValue = ''; }
+
+    /** Process the upload queue one file at a time. */
+    async function processQueue() {
+        if (isProcessing) return;
+        isProcessing = true;
+        uploadWarning.style.display = 'block';
+        window.addEventListener('beforeunload', onBeforeUnload);
+
+        while (uploadQueue.length) {
+            const { file, index } = uploadQueue.shift();
+            await uploadFile(file, index);
+        }
+
+        isProcessing = false;
+        uploadWarning.style.display = 'none';
+        window.removeEventListener('beforeunload', onBeforeUnload);
+    }
+
+    /** Upload a single file via POST and consume the SSE response. */
+    async function uploadFile(file, index, replace = false) {
+        const formData = new FormData();
+        formData.append('file', file);
+        setStep(index, 'convert', 'active');
+
+        const url = replace ? `${API_BASE}/upload?replace=true` : `${API_BASE}/upload`;
+        try {
+            const resp = await fetch(url, { method: 'POST', body: formData });
+            const reader  = resp.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop();
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        try { handleProgress(index, JSON.parse(line.slice(6))); }
+                        catch {}
+                    }
+                }
+            }
+            // Flush remaining buffer
+            if (buffer.startsWith('data: ')) {
+                try { handleProgress(index, JSON.parse(buffer.slice(6))); }
+                catch {}
+            }
+        } catch (err) {
+            console.error('Upload error:', err);
+            setStep(index, 'convert', 'error');
+            setStep(index, 'upload', 'error');
+            setStep(index, 'embed', 'error');
+            showError(`Failed to upload ${file.name}`);
+        }
+    }
+
+    /** Handle a single SSE progress event for a file upload. */
+    function handleProgress(index, data) {
+        const handlers = {
+            converting: () => setStep(index, 'convert', 'active'),
+            uploading:  () => { setStep(index, 'convert', 'done'); setStep(index, 'upload', 'active'); },
+            embedding:  () => { setStep(index, 'upload', 'done'); setStep(index, 'embed', 'active'); },
+            complete:   () => {
+                setStep(index, 'convert', 'done');
+                setStep(index, 'upload', 'done');
+                setStep(index, 'embed', 'done');
+                setTimeout(() => { const el = $(`file-${index}`); if (el) el.remove(); }, 2000);
+                loadDocuments();
+            },
+            duplicate: () => showDuplicateModal(data.filename, fileRegistry[index], index),
+            error:     () => {
+                const at = data.failed_at || 'convert';
+                setStep(index, 'convert', at === 'convert' ? 'error' : 'done');
+                setStep(index, 'upload', ['convert','upload'].includes(at) ? 'error' : 'done');
+                setStep(index, 'embed', 'error');
+                showError(data.error || 'Upload failed');
+            }
+        };
+        const fn = handlers[data.step];
+        if (fn) fn();
+    }
+
+    /** Show a modal asking to replace a duplicate file. */
+    function showDuplicateModal(filename, file, index) {
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+        overlay.innerHTML = `
+            <div class="modal">
+                <h3>Duplicate Document</h3>
+                <p>A document named <strong>${escapeHtml(filename)}</strong> already exists in this workspace.</p>
+                <div class="modal-actions">
+                    <button class="btn secondary" id="modalCancelBtn">Cancel</button>
+                    <button class="btn danger" id="modalReplaceBtn">Replace</button>
+                </div>
+            </div>`;
+        document.body.appendChild(overlay);
+        overlay.querySelector('#modalCancelBtn').addEventListener('click', () => {
+            overlay.remove();
+            const item = $(`file-${index}`);
+            if (item) item.remove();
+        });
+        overlay.querySelector('#modalReplaceBtn').addEventListener('click', () => {
+            overlay.remove();
+            uploadFile(file, index, true);
+        });
+    }
+
+    /* =================================================================
+       SCRAPE SOURCES MANAGEMENT
+       ================================================================= */
+
+    let scrapeSources = [];
+    let scrapeStatusPollInterval = null;
+
+    const addSourceForm = $('addSourceForm');
+
+    // ---- Crawl Mode Toggle ------------------------------------------------
+    function getSelectedCrawlMode(formEl) {
+        const radio = formEl.querySelector('input[name="sourceCrawlMode"]:checked');
+        return radio ? radio.value : 'depth';
+    }
+
+    function applyCrawlModeVisibility(mode, depthEl, prefixEl, maxPagesEl) {
+        if (mode === 'prefix') {
+            depthEl.style.display = 'none';
+            prefixEl.style.display = '';
+            maxPagesEl.style.display = '';
+        } else {
+            depthEl.style.display = '';
+            prefixEl.style.display = 'none';
+            maxPagesEl.style.display = 'none';
+        }
+    }
+
+    addSourceForm.querySelectorAll('input[name="sourceCrawlMode"]').forEach(radio => {
+        radio.addEventListener('change', () => {
+            applyCrawlModeVisibility(radio.value, $('depthGroup'), $('prefixGroup'), $('maxPagesGroup'));
+        });
+    });
+
+    // ---- Prefix Tag Management (Add Source form) --------------------------
+    let addFormPrefixes = [];
+
+    function renderPrefixTags(containerEl, inputEl, prefixesArr, onRemove) {
+        // Remove existing tags
+        containerEl.querySelectorAll('.prefix-tag').forEach(t => t.remove());
+        prefixesArr.forEach((p, i) => {
+            const tag = document.createElement('span');
+            tag.className = 'prefix-tag';
+            tag.innerHTML = `${escapeHtml(p)}<span class="remove-tag" data-index="${i}">&times;</span>`;
+            containerEl.insertBefore(tag, inputEl);
+        });
+        // Attach remove handlers
+        containerEl.querySelectorAll('.remove-tag').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                onRemove(parseInt(btn.dataset.index));
+            });
+        });
+    }
+
+    function addPrefix(inputEl, containerEl, prefixesArr, renderFn) {
+        let val = inputEl.value.trim();
+        if (!val) return;
+        // Ensure it starts with /
+        if (!val.startsWith('/')) val = '/' + val;
+        // Ensure it ends with /
+        if (!val.endsWith('/')) val += '/';
+        if (!prefixesArr.includes(val)) {
+            prefixesArr.push(val);
+            renderFn();
+        }
+        inputEl.value = '';
+    }
+
+    $('sourcePrefixInput').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ',') {
+            e.preventDefault();
+            addPrefix($('sourcePrefixInput'), $('sourcePrefixTags'), addFormPrefixes, renderAddFormPrefixes);
+        }
+    });
+    // Also add on blur
+    $('sourcePrefixInput').addEventListener('blur', () => {
+        if ($('sourcePrefixInput').value.trim()) {
+            addPrefix($('sourcePrefixInput'), $('sourcePrefixTags'), addFormPrefixes, renderAddFormPrefixes);
+        }
+    });
+    // Click on wrapper focuses input
+    $('sourcePrefixTags').addEventListener('click', () => $('sourcePrefixInput').focus());
+
+    function renderAddFormPrefixes() {
+        renderPrefixTags($('sourcePrefixTags'), $('sourcePrefixInput'), addFormPrefixes, (idx) => {
+            addFormPrefixes.splice(idx, 1);
+            renderAddFormPrefixes();
+        });
+    }
+
+    // ---- Auto-populate prefix from URL ------------------------------------
+    $('sourceUrl').addEventListener('change', () => {
+        if (getSelectedCrawlMode(addSourceForm) !== 'prefix') return;
+        autoPopulatePrefix($('sourceUrl').value, addFormPrefixes, renderAddFormPrefixes);
+    });
+    // Also auto-populate when switching to prefix mode
+    $('crawlModePrefix').addEventListener('change', () => {
+        if (addFormPrefixes.length === 0) {
+            autoPopulatePrefix($('sourceUrl').value, addFormPrefixes, renderAddFormPrefixes);
+        }
+    });
+
+    function autoPopulatePrefix(urlStr, prefixesArr, renderFn) {
+        if (!urlStr) return;
+        try {
+            const u = new URL(urlStr);
+            let path = u.pathname;
+            // Only auto-populate if there's a meaningful path (not just /)
+            if (path && path !== '/') {
+                if (!path.endsWith('/')) path += '/';
+                if (!prefixesArr.includes(path)) {
+                    prefixesArr.push(path);
+                    renderFn();
+                }
+            }
+        } catch { /* invalid URL, ignore */ }
+    }
+
+    // Toggle add-source form
+    $('addSourceToggleBtn').addEventListener('click', () => {
+        addSourceForm.classList.toggle('visible');
+        if (addSourceForm.classList.contains('visible')) $('sourceUrl').focus();
+    });
+    $('cancelSourceBtn').addEventListener('click', () => {
+        addSourceForm.classList.remove('visible');
+        clearSourceForm();
+    });
+
+    function clearSourceForm() {
+        $('sourceUrl').value = '';
+        $('sourceCategory').value = '';
+        $('sourceDepth').value = '2';
+        $('sourceSchedule').value = '';
+        $('crawlModeDepth').checked = true;
+        $('sourceMaxPages').value = '500';
+        $('sourcePrefixInput').value = '';
+        addFormPrefixes.length = 0;
+        renderAddFormPrefixes();
+        applyCrawlModeVisibility('depth', $('depthGroup'), $('prefixGroup'), $('maxPagesGroup'));
+        addSourceForm.querySelectorAll('.field-error').forEach(el => el.classList.remove('field-error'));
+    }
+
+    // Save new source
+    $('saveSourceBtn').addEventListener('click', async () => {
+        const url      = $('sourceUrl').value.trim();
+        const category = $('sourceCategory').value.trim();
+        const crawlMode = getSelectedCrawlMode(addSourceForm);
+        const maxDepth = parseInt($('sourceDepth').value);
+        const schedVal = $('sourceSchedule').value;
+        const schedule = schedVal === 'manual' ? null : (schedVal || null);
+        const maxPages = parseInt($('sourceMaxPages').value) || 500;
+
+        // Clear previous errors
+        addSourceForm.querySelectorAll('.field-error').forEach(el => el.classList.remove('field-error'));
+
+        // Validate
+        const errors = [];
+        if (!url)      { errors.push('URL');       $('sourceUrl').classList.add('field-error'); }
+        if (!category) { errors.push('Category');  $('sourceCategory').classList.add('field-error'); }
+        if (crawlMode === 'depth' && !maxDepth) { errors.push('Depth'); $('sourceDepth').classList.add('field-error'); }
+        if (crawlMode === 'prefix' && addFormPrefixes.length === 0) {
+            errors.push('Allowed Prefixes');
+            $('sourcePrefixTags').classList.add('field-error');
+        }
+        if (!schedVal) { errors.push('Schedule');  $('sourceSchedule').classList.add('field-error'); }
+        if (errors.length) { showError(`${errors.join(', ')} ${errors.length === 1 ? 'is' : 'are'} required`); return; }
+
+        const body = { url, category, crawl_mode: crawlMode, schedule };
+        if (crawlMode === 'depth') {
+            body.max_depth = maxDepth;
+        } else {
+            body.allowed_prefixes = [...addFormPrefixes];
+            body.max_pages = maxPages;
+            body.max_depth = 1; // not used but satisfies schema default
+        }
+
+        try {
+            const resp = await fetch(`${API_BASE}/scrape-sources`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            const data = await resp.json();
+            if (!resp.ok) { showError(data.error || 'Failed to create source'); return; }
+            addSourceForm.classList.remove('visible');
+            clearSourceForm();
+            loadScrapeSources();
+        } catch { showError('Failed to create scrape source'); }
+    });
+
+    /** Fetch all scrape sources and re-render cards. */
+    async function loadScrapeSources() {
+        try {
+            const resp = await fetch(`${API_BASE}/scrape-sources`);
+            scrapeSources = await resp.json();
+            renderSourceCards();
+            startScrapePolling();
+        } catch (err) { console.error('Failed to load scrape sources:', err); }
+    }
+
+    /** Render source cards with status badges and action buttons. */
+    function renderSourceCards() {
+        const container = $('sourceCards');
+        if (!scrapeSources.length) {
+            container.innerHTML = '<div class="empty-state">No scrape sources configured yet.</div>';
+            return;
+        }
+        container.innerHTML = scrapeSources.map(src => {
+            const job = src.latest_job;
+            let statusBadge = '', statusDetail = '';
+            if (job) {
+                if (job.status === 'running')   statusBadge = `<span class="source-badge status-running">Scraping... (${job.pages_scraped||0} pages)</span>`;
+                if (job.status === 'pending')   statusBadge = `<span class="source-badge status-pending">Queued</span>`;
+                if (job.status === 'completed') statusBadge = `<span class="source-badge status-completed">Completed</span>`;
+                if (job.status === 'failed') {
+                    statusBadge = `<span class="source-badge status-failed">Failed</span>`;
+                    if (job.error) statusDetail = `<br><span style="font-size:11px;color:var(--error);">${escapeHtml(job.error)}</span>`;
+                }
+            }
+            const lastScraped = src.last_scraped_at ? `Last scraped: ${formatRelativeTime(src.last_scraped_at)}` : 'Never scraped';
+            const busy = job && (job.status === 'running' || job.status === 'pending');
+            const isPrefix = src.crawl_mode === 'prefix';
+            const prefixes = isPrefix && src.allowed_prefixes ? JSON.parse(src.allowed_prefixes) : [];
+            return `
+                <div class="source-card" data-source-id="${src.id}">
+                    <div class="source-card-top">
+                        <div class="source-card-info">
+                            <div class="source-card-url">${escapeHtml(src.url)}</div>
+                            <div class="source-card-meta">
+                                <span class="source-badge category">${escapeHtml(src.category)}</span>
+                                ${isPrefix
+                                    ? `<span class="source-badge depth">Prefix (max ${src.max_pages || 500} pages)</span>`
+                                    : `<span class="source-badge depth">Depth: ${src.max_depth}</span>`}
+                                ${isPrefix && prefixes.length ? `<span class="source-badge" style="background:#f0fdf4;color:#166534;">${prefixes.map(p => escapeHtml(p)).join(', ')}</span>` : ''}
+                                ${src.schedule ? `<span class="source-badge schedule">${escapeHtml(capitalize(src.schedule))}</span>` : ''}
+                                ${statusBadge}
+                                <span>${escapeHtml(lastScraped)}</span>
+                                <span>${src.doc_count} page${src.doc_count !== 1 ? 's' : ''}</span>
+                            </div>
+                            ${statusDetail}
+                        </div>
+                        <div class="source-card-actions">
+                            <button class="btn small gold scrape-now-btn" ${busy ? 'disabled style="opacity:0.5"' : ''} data-source-id="${src.id}">Scrape Now</button>
+                            <button class="btn small secondary edit-source-btn" data-source-id="${src.id}">Edit</button>
+                            <button class="btn small danger delete-source-btn" data-source-id="${src.id}">Delete</button>
+                        </div>
+                    </div>
+                    <!-- Inline edit form (hidden until Edit is clicked) -->
+                    <div class="edit-form-inline" id="editForm-${src.id}" style="display:none;">
+                        <div class="form-row">
+                            <div class="form-group full-width">
+                                <label>URL</label>
+                                <input type="url" id="editUrl-${src.id}" value="${escapeHtml(src.url)}">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Category <span class="required-star">*</span></label>
+                                <input type="text" id="editCategory-${src.id}" value="${escapeHtml(src.category)}">
+                            </div>
+                            <div class="form-group">
+                                <label>Crawl Mode <span class="required-star">*</span></label>
+                                <div class="crawl-mode-toggle">
+                                    <input type="radio" name="editCrawlMode-${src.id}" id="editCrawlModeDepth-${src.id}" value="depth" ${!isPrefix?'checked':''}>
+                                    <label for="editCrawlModeDepth-${src.id}">Depth-based</label>
+                                    <input type="radio" name="editCrawlMode-${src.id}" id="editCrawlModePrefix-${src.id}" value="prefix" ${isPrefix?'checked':''}>
+                                    <label for="editCrawlModePrefix-${src.id}">Prefix-based</label>
+                                </div>
+                            </div>
+                            <div class="form-group" id="editDepthGroup-${src.id}" style="${isPrefix?'display:none':''}">
+                                <label>Depth <span class="required-star">*</span></label>
+                                <select id="editDepth-${src.id}">
+                                    ${[1,2,3,4,5].map(d=>`<option value="${d}" ${src.max_depth===d?'selected':''}>${d}</option>`).join('')}
+                                </select>
+                            </div>
+                            <div class="form-group" id="editPrefixGroup-${src.id}" style="${isPrefix?'':'display:none'}; min-width:220px;">
+                                <label>Allowed Prefixes <span class="required-star">*</span></label>
+                                <div class="prefix-tags-wrap" id="editPrefixTags-${src.id}">
+                                    <input type="text" class="prefix-tags-input" id="editPrefixInput-${src.id}" placeholder="e.g. /path/ then Enter">
+                                </div>
+                            </div>
+                            <div class="form-group" id="editMaxPagesGroup-${src.id}" style="${isPrefix?'':'display:none'}">
+                                <label>Max Pages</label>
+                                <input type="number" id="editMaxPages-${src.id}" value="${src.max_pages || 500}" min="1" max="10000">
+                            </div>
+                            <div class="form-group">
+                                <label>Schedule <span class="required-star">*</span></label>
+                                <select id="editSchedule-${src.id}">
+                                    <option value="" disabled ${!src.schedule?'selected':''}>Select schedule...</option>
+                                    <option value="manual" ${src.schedule==='manual'?'selected':''}>Manual only</option>
+                                    <option value="daily" ${src.schedule==='daily'?'selected':''}>Daily</option>
+                                    <option value="weekly" ${src.schedule==='weekly'?'selected':''}>Weekly</option>
+                                    <option value="monthly" ${src.schedule==='monthly'?'selected':''}>Monthly</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-actions">
+                            <button class="btn secondary cancel-edit-btn" data-source-id="${src.id}">Cancel</button>
+                            <button class="btn success save-edit-btn" data-source-id="${src.id}">Save</button>
+                        </div>
+                    </div>
+                </div>`;
+        }).join('');
+
+        // Initialize edit form crawl-mode toggles and prefix tags for each source
+        scrapeSources.forEach(src => {
+            const isPrefix = src.crawl_mode === 'prefix';
+            const prefixes = isPrefix && src.allowed_prefixes ? JSON.parse(src.allowed_prefixes) : [];
+
+            // Store prefixes in a data attribute for later access
+            const card = document.querySelector(`.source-card[data-source-id="${src.id}"]`);
+            if (!card) return;
+            card._editPrefixes = [...prefixes];
+
+            // Crawl mode toggle handlers
+            const depthRadio = $(`editCrawlModeDepth-${src.id}`);
+            const prefixRadio = $(`editCrawlModePrefix-${src.id}`);
+            const depthGroup = $(`editDepthGroup-${src.id}`);
+            const prefixGroup = $(`editPrefixGroup-${src.id}`);
+            const maxPagesGroup = $(`editMaxPagesGroup-${src.id}`);
+
+            if (depthRadio) {
+                depthRadio.addEventListener('change', () => applyCrawlModeVisibility('depth', depthGroup, prefixGroup, maxPagesGroup));
+            }
+            if (prefixRadio) {
+                prefixRadio.addEventListener('change', () => {
+                    applyCrawlModeVisibility('prefix', depthGroup, prefixGroup, maxPagesGroup);
+                    // Auto-populate if empty
+                    if (card._editPrefixes.length === 0) {
+                        autoPopulatePrefix($(`editUrl-${src.id}`).value, card._editPrefixes, () => {
+                            _renderEditPrefixes(src.id, card);
+                        });
+                    }
+                });
+            }
+
+            // Render initial prefix tags
+            const tagsWrap = $(`editPrefixTags-${src.id}`);
+            const tagInput = $(`editPrefixInput-${src.id}`);
+            if (tagsWrap && tagInput) {
+                _renderEditPrefixes(src.id, card);
+
+                tagInput.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter' || e.key === ',') {
+                        e.preventDefault();
+                        addPrefix(tagInput, tagsWrap, card._editPrefixes, () => _renderEditPrefixes(src.id, card));
+                    }
+                });
+                tagInput.addEventListener('blur', () => {
+                    if (tagInput.value.trim()) {
+                        addPrefix(tagInput, tagsWrap, card._editPrefixes, () => _renderEditPrefixes(src.id, card));
+                    }
+                });
+                tagsWrap.addEventListener('click', () => tagInput.focus());
+            }
+        });
+    }
+
+    function _renderEditPrefixes(sourceId, card) {
+        const tagsWrap = $(`editPrefixTags-${sourceId}`);
+        const tagInput = $(`editPrefixInput-${sourceId}`);
+        if (!tagsWrap || !tagInput) return;
+        renderPrefixTags(tagsWrap, tagInput, card._editPrefixes, (idx) => {
+            card._editPrefixes.splice(idx, 1);
+            _renderEditPrefixes(sourceId, card);
+        });
+    }
+
+    // Event delegation for source card buttons
+    $('sourceCards').addEventListener('click', async (e) => {
+        const scrapeBtn = e.target.closest('.scrape-now-btn');
+        const editBtn   = e.target.closest('.edit-source-btn');
+        const deleteBtn = e.target.closest('.delete-source-btn');
+        const cancelBtn = e.target.closest('.cancel-edit-btn');
+        const saveBtn   = e.target.closest('.save-edit-btn');
+
+        if (scrapeBtn) {
+            const id = scrapeBtn.dataset.sourceId;
+            scrapeBtn.disabled = true;
+            scrapeBtn.textContent = 'Starting...';
+            try {
+                const resp = await fetch(`${API_BASE}/scrape-sources/${id}/run`, { method: 'POST' });
+                const data = await resp.json();
+                if (!resp.ok) showError(data.error || 'Failed to queue scrape');
+            } catch { showError('Failed to trigger scrape'); }
+            loadScrapeSources();
+        }
+
+        if (editBtn) {
+            const id = editBtn.dataset.sourceId;
+            const form = $(`editForm-${id}`);
+            form.style.display = form.style.display === 'none' ? 'block' : 'none';
+        }
+
+        if (cancelBtn) {
+            $(`editForm-${cancelBtn.dataset.sourceId}`).style.display = 'none';
+            loadScrapeSources(); // reset form values
+        }
+
+        if (saveBtn) {
+            const id = saveBtn.dataset.sourceId;
+            const url      = $(`editUrl-${id}`).value.trim();
+            const category = $(`editCategory-${id}`).value.trim();
+            const maxDepth = parseInt($(`editDepth-${id}`).value);
+            const schedVal = $(`editSchedule-${id}`).value;
+            const schedule = schedVal === 'manual' ? null : (schedVal || null);
+
+            // Get crawl mode from the edit form radio buttons
+            const editModeRadio = document.querySelector(`input[name="editCrawlMode-${id}"]:checked`);
+            const crawlMode = editModeRadio ? editModeRadio.value : 'depth';
+            const card = document.querySelector(`.source-card[data-source-id="${id}"]`);
+            const editPrefixes = card ? card._editPrefixes : [];
+            const maxPages = parseInt($(`editMaxPages-${id}`).value) || 500;
+
+            if (!url || !category) { showError('URL and Category are required'); return; }
+            if (!schedVal)         { showError('Schedule is required'); return; }
+            if (crawlMode === 'prefix' && editPrefixes.length === 0) {
+                showError('At least one allowed prefix is required for prefix mode');
+                return;
+            }
+
+            const body = { url, category, crawl_mode: crawlMode, schedule };
+            if (crawlMode === 'depth') {
+                body.max_depth = maxDepth;
+            } else {
+                body.allowed_prefixes = [...editPrefixes];
+                body.max_pages = maxPages;
+                body.max_depth = 1;
+            }
+
+            try {
+                const resp = await fetch(`${API_BASE}/scrape-sources/${id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                const data = await resp.json();
+                if (!resp.ok) { showError(data.error || 'Failed to update source'); return; }
+                loadScrapeSources();
+            } catch { showError('Failed to update source'); }
+        }
+
+        if (deleteBtn) {
+            const id = deleteBtn.dataset.sourceId;
+            const src = scrapeSources.find(s => s.id == id);
+            if (!confirm(`Delete source "${src ? src.url : id}" and all its scraped documents?`)) return;
+            try {
+                await fetch(`${API_BASE}/scrape-sources/${id}`, { method: 'DELETE' });
+                loadScrapeSources();
+                loadScrapedDocuments();
+            } catch { showError('Failed to delete source'); }
+        }
+    });
+
+    /* =================================================================
+       SCRAPE STATUS POLLING
+       When any source has a running/pending job, poll every 5 s for
+       progress updates.  Stops automatically when no jobs are active.
+       ================================================================= */
+    function startScrapePolling() {
+        const hasActive = scrapeSources.some(s =>
+            s.latest_job && (s.latest_job.status === 'running' || s.latest_job.status === 'pending'));
+        if (hasActive && !scrapeStatusPollInterval) {
+            scrapeStatusPollInterval = setInterval(async () => {
+                await loadScrapeSources();
+                await loadScrapedDocuments();
+                const stillActive = scrapeSources.some(s =>
+                    s.latest_job && (s.latest_job.status === 'running' || s.latest_job.status === 'pending'));
+                if (!stillActive) {
+                    clearInterval(scrapeStatusPollInterval);
+                    scrapeStatusPollInterval = null;
+                }
+            }, 5000);
+        }
+    }
+
+    /* =================================================================
+       INITIAL DATA LOAD
+       ================================================================= */
+    loadDocuments();
+    loadScrapeSources();
+    loadScrapedDocuments();
+    </script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+flask
+requests
+python-dotenv
+numpy<2
+docling
+onnxruntime
+opencv-python-headless
+trafilatura
+apscheduler
+beautifulsoup4

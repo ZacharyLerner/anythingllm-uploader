@@ -234,7 +234,9 @@ def _validate_scrape_source(data: dict, *, existing: Optional[dict] = None):
         schedule = data.get("schedule", existing["schedule"])
         enabled = data.get("enabled", existing["enabled"])
         crawl_mode = data.get("crawl_mode", existing.get("crawl_mode", "depth"))
-        max_pages = data.get("max_pages", existing.get("max_pages", 500))
+        max_pages = data.get("max_pages", existing.get("max_pages", 100))
+        allow_offsite = data.get("allow_offsite", existing.get("allow_offsite", 0))
+        offsite_depth = data.get("offsite_depth", existing.get("offsite_depth", 1))
     else:
         url = (data.get("url") or "").strip()
         category = (data.get("category") or "").strip()
@@ -242,7 +244,9 @@ def _validate_scrape_source(data: dict, *, existing: Optional[dict] = None):
         schedule = data.get("schedule")
         enabled = 1
         crawl_mode = data.get("crawl_mode", "depth")
-        max_pages = data.get("max_pages", 500)
+        max_pages = data.get("max_pages", 100)
+        allow_offsite = data.get("allow_offsite", 0)
+        offsite_depth = data.get("offsite_depth", 1)
 
     if not url:
         return None, "URL is required"
@@ -258,6 +262,11 @@ def _validate_scrape_source(data: dict, *, existing: Optional[dict] = None):
             return None, "Max pages must be a positive integer"
     if schedule and schedule not in ("daily", "weekly", "monthly"):
         return None, "Schedule must be daily, weekly, monthly, or null"
+
+    # Validate offsite crawling fields.
+    allow_offsite = int(bool(allow_offsite))
+    if not isinstance(offsite_depth, int) or not 1 <= offsite_depth <= 3:
+        return None, "Off-domain depth must be between 1 and 3"
 
     # Handle allowed_prefixes.
     if "allowed_prefixes" in data:
@@ -284,6 +293,8 @@ def _validate_scrape_source(data: dict, *, existing: Optional[dict] = None):
         "crawl_mode": crawl_mode,
         "max_pages": max_pages,
         "allowed_prefixes": prefixes_json,
+        "allow_offsite": allow_offsite,
+        "offsite_depth": offsite_depth,
     }, None
 
 
@@ -720,6 +731,8 @@ def list_scrape_sources(workspace):
             "max_pages": row["max_pages"],
             "schedule": row["schedule"],
             "enabled": bool(row["enabled"]),
+            "allow_offsite": row["allow_offsite"],
+            "offsite_depth": row["offsite_depth"],
             "created_at": row["created_at"],
             "last_scraped_at": row["last_scraped_at"],
             "doc_count": row["doc_count"],
@@ -746,8 +759,9 @@ def create_scrape_source(workspace):
             with db:
                 cur = db.execute(
                     "INSERT INTO scrape_sources "
-                    "(workspace, url, category, max_depth, schedule, crawl_mode, allowed_prefixes, max_pages) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    "(workspace, url, category, max_depth, schedule, crawl_mode, "
+                    "allowed_prefixes, max_pages, allow_offsite, offsite_depth) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         workspace,
                         fields["url"],
@@ -757,6 +771,8 @@ def create_scrape_source(workspace):
                         fields["crawl_mode"],
                         fields["allowed_prefixes"],
                         fields["max_pages"],
+                        fields["allow_offsite"],
+                        fields["offsite_depth"],
                     ),
                 )
                 source_id = cur.lastrowid
@@ -794,7 +810,8 @@ def update_scrape_source(workspace, source_id):
                 db.execute(
                     "UPDATE scrape_sources "
                     "SET url=?, category=?, max_depth=?, schedule=?, enabled=?, "
-                    "crawl_mode=?, allowed_prefixes=?, max_pages=? "
+                    "crawl_mode=?, allowed_prefixes=?, max_pages=?, "
+                    "allow_offsite=?, offsite_depth=? "
                     "WHERE id=? AND workspace=?",
                     (
                         fields["url"],
@@ -805,6 +822,8 @@ def update_scrape_source(workspace, source_id):
                         fields["crawl_mode"],
                         fields["allowed_prefixes"],
                         fields["max_pages"],
+                        fields["allow_offsite"],
+                        fields["offsite_depth"],
                         source_id,
                         workspace,
                     ),

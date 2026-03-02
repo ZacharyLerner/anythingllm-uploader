@@ -184,8 +184,14 @@ def _url_to_filename(url: str, title: Optional[str] = None) -> str:
 # ===================================================================
 
 
-def _extract_links(html: str, base_url: str) -> set[str]:
-    """Return same-domain page links found in *html*."""
+def _extract_links(
+    html: str, base_url: str, *, allow_offsite: bool = False
+) -> set[str]:
+    """Return page links found in *html*.
+
+    By default only same-domain links are returned.  When *allow_offsite*
+    is ``True``, cross-domain links are included as well.
+    """
     soup = BeautifulSoup(html, "html.parser")
     links: set[str] = set()
     for a_tag in soup.find_all("a", href=True):
@@ -194,7 +200,7 @@ def _extract_links(html: str, base_url: str) -> set[str]:
             continue
         absolute = urljoin(base_url, href)
         normalized = _normalize_url(absolute)
-        if not _is_same_domain(normalized, base_url):
+        if not allow_offsite and not _is_same_domain(normalized, base_url):
             continue
         # Skip binary / non-page resources.
         if any(
@@ -489,6 +495,9 @@ def _crawl_source(source: dict, job_id: int) -> tuple[int, int]:
     links up to ``max_depth`` levels from the seed URL, extracts readable
     content, and uploads each page to AnythingLLM.
 
+    When ``allow_offsite`` is enabled, links to external domains are
+    followed up to ``offsite_depth`` hops beyond the base domain.
+
     Returns ``(pages_found, pages_scraped)``.
     """
     workspace = source["workspace"]
@@ -496,13 +505,18 @@ def _crawl_source(source: dict, job_id: int) -> tuple[int, int]:
     max_depth = source["max_depth"]
     category = source["category"]
     source_id = source["id"]
+    allow_offsite = bool(source.get("allow_offsite", 0))
+    offsite_depth = source.get("offsite_depth", 1) if allow_offsite else 0
+    seed_domain = urlparse(seed_url).netloc
 
     log.info(
-        "[Job %s] Starting crawl of %s (depth=%s, category=%s)",
+        "[Job %s] Starting crawl of %s (depth=%s, category=%s, offsite=%s/%s)",
         job_id,
         seed_url,
         max_depth,
         category,
+        allow_offsite,
+        offsite_depth,
     )
 
     # --- Delete all existing documents for this source before re-scraping ---
@@ -510,8 +524,10 @@ def _crawl_source(source: dict, job_id: int) -> tuple[int, int]:
 
     disallowed = _fetch_robots_disallowed(seed_url)
 
-    # BFS queue: (url, depth).  Using deque for efficient popleft().
-    queue: deque[tuple[str, int]] = deque([(seed_url, 0)])
+    # BFS queue: (url, depth, offsite_hops).
+    # offsite_hops tracks how many consecutive off-domain hops from the
+    # last on-domain page.  On-domain pages reset this to 0.
+    queue: deque[tuple[str, int, int]] = deque([(seed_url, 0, 0)])
     visited: set[str] = set()
     pages_found = 0
     pages_scraped = 0
@@ -520,7 +536,7 @@ def _crawl_source(source: dict, job_id: int) -> tuple[int, int]:
     # avoid the overhead of opening/closing on every page.
     with open_db() as db:
         while queue and pages_found < MAX_PAGES_PER_JOB and not _shutdown_requested:
-            url, depth = queue.popleft()
+            url, depth, cur_offsite_hops = queue.popleft()
 
             if url in visited:
                 continue
@@ -547,10 +563,20 @@ def _crawl_source(source: dict, job_id: int) -> tuple[int, int]:
                 )
 
             # Discover links for the next depth level.
+            is_on_domain = urlparse(url).netloc == seed_domain
             if depth < max_depth - 1:
-                for link in _extract_links(html, url):
-                    if link not in visited:
-                        queue.append((link, depth + 1))
+                for link in _extract_links(html, url, allow_offsite=allow_offsite):
+                    if link in visited:
+                        continue
+                    link_on_domain = urlparse(link).netloc == seed_domain
+                    if link_on_domain:
+                        # On-domain link: reset offsite hop counter.
+                        queue.append((link, depth + 1, 0))
+                    elif allow_offsite:
+                        # Off-domain link: only follow if within offsite_depth.
+                        next_hops = (cur_offsite_hops + 1) if not is_on_domain else 1
+                        if next_hops <= offsite_depth:
+                            queue.append((link, depth + 1, next_hops))
 
             title, markdown = _extract_content(html, url)
             if not markdown:
@@ -603,12 +629,17 @@ def _crawl_source_prefix(source: dict, job_id: int) -> tuple[int, int]:
     when all reachable in-scope pages are visited or ``max_pages``
     is reached.
 
+    When ``allow_offsite`` is enabled, off-domain links discovered from
+    in-scope pages are followed up to ``offsite_depth`` hops.
+
     Returns ``(pages_found, pages_scraped)``.
     """
     workspace = source["workspace"]
     seed_url = _normalize_url(source["url"])
     category = source["category"]
     source_id = source["id"]
+    allow_offsite = bool(source.get("allow_offsite", 0))
+    offsite_depth_limit = source.get("offsite_depth", 1) if allow_offsite else 0
 
     # Parse allowed prefixes from JSON string.
     allowed_prefixes_raw = source.get("allowed_prefixes") or "[]"
@@ -620,12 +651,14 @@ def _crawl_source_prefix(source: dict, job_id: int) -> tuple[int, int]:
     max_pages = source.get("max_pages") or MAX_PAGES_PER_JOB
 
     log.info(
-        "[Job %s] Starting prefix crawl of %s (prefixes=%s, max_pages=%s, category=%s)",
+        "[Job %s] Starting prefix crawl of %s (prefixes=%s, max_pages=%s, category=%s, offsite=%s/%s)",
         job_id,
         seed_url,
         allowed_prefixes,
         max_pages,
         category,
+        allow_offsite,
+        offsite_depth_limit,
     )
 
     # --- Delete all existing documents for this source before re-scraping ---
@@ -633,8 +666,9 @@ def _crawl_source_prefix(source: dict, job_id: int) -> tuple[int, int]:
 
     disallowed = _fetch_robots_disallowed(seed_url)
 
-    # BFS queue -- no depth tracking needed in prefix mode.
-    queue: deque[str] = deque([seed_url])
+    # BFS queue: (url, offsite_hops).
+    # offsite_hops = 0 for on-domain prefix-scoped pages.
+    queue: deque[tuple[str, int]] = deque([(seed_url, 0)])
     visited: set[str] = set()
     pages_found = 0
     pages_scraped = 0
@@ -652,7 +686,7 @@ def _crawl_source_prefix(source: dict, job_id: int) -> tuple[int, int]:
 
     with open_db() as db:
         while queue and pages_found < max_pages and not _shutdown_requested:
-            url = queue.popleft()
+            url, cur_offsite_hops = queue.popleft()
 
             if url in visited:
                 continue
@@ -678,10 +712,20 @@ def _crawl_source_prefix(source: dict, job_id: int) -> tuple[int, int]:
                     (pages_found, job_id),
                 )
 
-            # Discover all same-domain links, then filter by prefix scope.
-            for link in _extract_links(html, url):
-                if link not in visited and _is_in_prefix_scope(link):
-                    queue.append(link)
+            # Discover links and filter by scope.
+            is_on_domain = urlparse(url).netloc == seed_domain
+            for link in _extract_links(html, url, allow_offsite=allow_offsite):
+                if link in visited:
+                    continue
+                link_on_domain = urlparse(link).netloc == seed_domain
+                if link_on_domain and _is_in_prefix_scope(link):
+                    # On-domain in-scope link.
+                    queue.append((link, 0))
+                elif allow_offsite and not link_on_domain:
+                    # Off-domain link: track hops.
+                    next_hops = (cur_offsite_hops + 1) if not is_on_domain else 1
+                    if next_hops <= offsite_depth_limit:
+                        queue.append((link, next_hops))
 
             title, markdown = _extract_content(html, url)
             if not markdown:

@@ -33,9 +33,11 @@ _SCHEMA = [
         max_depth       INTEGER NOT NULL DEFAULT 1,
         crawl_mode      TEXT NOT NULL DEFAULT 'depth',
         allowed_prefixes TEXT,
-        max_pages       INTEGER NOT NULL DEFAULT 500,
+        max_pages       INTEGER NOT NULL DEFAULT 100,
         schedule        TEXT,
         enabled         INTEGER NOT NULL DEFAULT 1,
+        allow_offsite   INTEGER NOT NULL DEFAULT 0,
+        offsite_depth   INTEGER NOT NULL DEFAULT 1,
         created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         last_scraped_at TIMESTAMP,
         UNIQUE(workspace, url)
@@ -135,4 +137,17 @@ def init_db():
             except sqlite3.OperationalError:
                 # Safe to ignore -- table/index already exists.
                 pass
+
+        # Migrations: add columns that may be missing in existing databases.
+        _migrations = [
+            "ALTER TABLE scrape_sources ADD COLUMN allow_offsite INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE scrape_sources ADD COLUMN offsite_depth INTEGER NOT NULL DEFAULT 1",
+        ]
+        for stmt in _migrations:
+            try:
+                db.execute(stmt)
+            except sqlite3.OperationalError:
+                # Column already exists -- safe to ignore.
+                pass
+
         db.commit()

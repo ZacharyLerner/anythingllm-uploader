@@ -536,16 +536,22 @@
             font-weight: 400;
         }
 
-        .auth-fields {
-            display: none;
-            gap: 12px;
-            margin-top: 8px;
+        /* Disabled state for select dropdowns */
+        .form-group select:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
         }
-        .auth-fields.visible { display: flex; }
+        /* Disabled state for include radio group (when custom depth is 3+) */
+        .include-radio-group.disabled-group {
+            opacity: 0.45;
+            pointer-events: none;
+        }
 
+        /* Checkbox label (used for domain lock) */
         .checkbox-label {
             display: flex; align-items: center; gap: 6px;
             font-size: 13px; color: var(--uri-blue); cursor: pointer;
+            margin-top: 22px;
         }
         .checkbox-label input[type="checkbox"] {
             width: 16px; height: 16px;
@@ -723,7 +729,7 @@
                             </div>
                             <div class="form-group">
                                 <label for="sourceMaxPages">Max pages</label>
-                                <input type="number" id="sourceMaxPages" value="50" min="1" max="500" placeholder="50">
+                                <input type="number" id="sourceMaxPages" value="100" min="1" max="500" placeholder="100">
                             </div>
                         </div>
                         <div class="form-row">
@@ -733,21 +739,19 @@
                             </div>
                         </div>
                         <div class="form-row">
-                            <div class="form-group full-width">
+                            <div class="form-group">
                                 <label class="checkbox-label">
-                                    <input type="checkbox" id="sourceAuth">
-                                    Requires authentication
+                                    <input type="checkbox" id="sourceDomainLock" checked>
+                                    Keep within domain
                                 </label>
-                                <div class="auth-fields" id="authFields">
-                                    <div class="form-group">
-                                        <label for="sourceAuthUser">Username</label>
-                                        <input type="text" id="sourceAuthUser" placeholder="Username">
-                                    </div>
-                                    <div class="form-group">
-                                        <label for="sourceAuthPass">Password</label>
-                                        <input type="password" id="sourceAuthPass" placeholder="Password">
-                                    </div>
-                                </div>
+                            </div>
+                            <div class="form-group offsite-depth-group" id="offsiteDepthGroup" style="display:none;">
+                                <label for="sourceOffsiteDepth">Off-domain depth</label>
+                                <select id="sourceOffsiteDepth">
+                                    <option value="1" selected>1 level</option>
+                                    <option value="2">2 levels</option>
+                                    <option value="3">3 levels</option>
+                                </select>
                             </div>
                         </div>
                     </div>
@@ -1430,12 +1434,42 @@
     function syncAdvancedFromInclude() {
         const sel = addSourceForm.querySelector('input[name="sourceInclude"]:checked');
         if (!sel) return;
+        const depthSelect = $('sourceDepth');
+        const depthVal = parseInt(depthSelect.value) || 2;
         if (sel.value === 'just') {
-            $('sourceDepth').value = '1';
+            depthSelect.value = '1';
+            depthSelect.disabled = false;
         } else if (sel.value === 'linked') {
-            $('sourceDepth').value = '2';
+            // Only reset depth if it was at 1 (from "just this page"); preserve manual 3+ selections
+            if (depthVal <= 1) depthSelect.value = '2';
+            depthSelect.disabled = false;
+        } else if (sel.value === 'path') {
+            // "Everything under /path/" -- grey out crawl depth
+            depthSelect.disabled = true;
         }
+        syncIncludeFromDepth();
         updateAdvancedSummary();
+    }
+
+    // When crawl depth is manually set to 3+, grey out the include radio group
+    function syncIncludeFromDepth() {
+        const depthVal = parseInt($('sourceDepth').value) || 2;
+        const includeGroup = $('includeGroup');
+        const radios = includeGroup.querySelectorAll('input[type="radio"]');
+        if (depthVal >= 3) {
+            includeGroup.classList.add('disabled-group');
+            radios.forEach(r => { r.disabled = true; });
+        } else {
+            includeGroup.classList.remove('disabled-group');
+            // Re-enable radios (except "path" if URL has no path)
+            radios.forEach(r => {
+                if (r.value === 'path') {
+                    r.disabled = !urlHasPath($('sourceUrl').value.trim());
+                } else {
+                    r.disabled = false;
+                }
+            });
+        }
     }
 
     // Wire up radio group
@@ -1499,15 +1533,21 @@
         link.classList.toggle('open', isOpen);
     });
 
-    $('sourceAuth').addEventListener('change', () => {
-        $('authFields').classList.toggle('visible', $('sourceAuth').checked);
+    // Domain lock checkbox toggle
+    $('sourceDomainLock').addEventListener('change', () => {
+        const locked = $('sourceDomainLock').checked;
+        $('offsiteDepthGroup').style.display = locked ? 'none' : '';
+        updateAdvancedSummary();
     });
 
     // Update summary whenever advanced fields change
-    ['sourceDepth', 'sourceMaxPages'].forEach(id => {
+    ['sourceDepth', 'sourceMaxPages', 'sourceOffsiteDepth'].forEach(id => {
         $(id).addEventListener('change', updateAdvancedSummary);
         $(id).addEventListener('input', updateAdvancedSummary);
     });
+
+    // When depth changes, sync the include group (grey out at 3+)
+    $('sourceDepth').addEventListener('change', syncIncludeFromDepth);
 
     function updateAdvancedSummary() {
         const parts = [];
@@ -1515,8 +1555,12 @@
         const maxPages = $('sourceMaxPages').value;
         const exclude = ($('sourceExclude') ? $('sourceExclude').value.trim() : '');
         if (depth !== '2') parts.push(`Depth: ${depth}`);
-        if (maxPages && maxPages !== '50') parts.push(`Max: ${maxPages} pages`);
+        if (maxPages && maxPages !== '100') parts.push(`Max: ${maxPages} pages`);
         if (exclude) parts.push('Excludes set');
+        if ($('sourceDomainLock') && !$('sourceDomainLock').checked) {
+            const od = $('sourceOffsiteDepth') ? $('sourceOffsiteDepth').value : '1';
+            parts.push(`Off-domain: ${od}`);
+        }
         $('advancedSummary').textContent = parts.length ? parts.join(' \u00b7 ') : '';
     }
 
@@ -1541,48 +1585,56 @@
         $('includeLinked').checked = true;
         highlightSelectedRadio('includeGroup');
         $('sourceDepth').value = '2';
+        $('sourceDepth').disabled = false;
         $('sourceSchedule').value = 'weekly';
-        $('sourceMaxPages').value = '50';
+        $('sourceMaxPages').value = '100';
         if ($('sourceExclude')) $('sourceExclude').value = '';
-        $('sourceAuth').checked = false;
-        $('authFields').classList.remove('visible');
-        if ($('sourceAuthUser')) $('sourceAuthUser').value = '';
-        if ($('sourceAuthPass')) $('sourceAuthPass').value = '';
+        $('sourceDomainLock').checked = true;
+        $('offsiteDepthGroup').style.display = 'none';
+        $('sourceOffsiteDepth').value = '1';
         $('advancedBody').classList.remove('open');
         $('advancedToggle').classList.remove('open');
         $('advancedSummary').textContent = '';
+        // Reset disabled states on include group
+        $('includeGroup').classList.remove('disabled-group');
         updateIncludeGroup();
         addSourceForm.querySelectorAll('.field-error').forEach(el => el.classList.remove('field-error'));
     }
 
     // ---- Map UI values to backend API body --------------------------------
-    function buildSourceBody(includeVal, url, category, depth, scheduleVal, maxPages) {
+    function buildSourceBody(includeVal, url, category, depth, scheduleVal, maxPages, domainLocked, offsiteDepth) {
         const schedule = scheduleVal === 'manual' ? null : (scheduleVal || null);
+        const allow_offsite = domainLocked ? 0 : 1;
+        const offsite_depth = parseInt(offsiteDepth) || 1;
 
+        let body;
         if (includeVal === 'just') {
             // Just this page: depth-based with depth 1
-            return { url, category, crawl_mode: 'depth', max_depth: 1, schedule, max_pages: parseInt(maxPages) || 50 };
+            body = { url, category, crawl_mode: 'depth', max_depth: 1, schedule, max_pages: parseInt(maxPages) || 100 };
         } else if (includeVal === 'path') {
             // Everything under /path/: prefix-based
             const path = getUrlPath(url);
-            return {
+            body = {
                 url, category,
                 crawl_mode: 'prefix',
                 allowed_prefixes: path ? [path] : [],
                 max_depth: 1,
-                max_pages: parseInt(maxPages) || 50,
+                max_pages: parseInt(maxPages) || 100,
                 schedule
             };
         } else {
             // This page + linked pages: depth-based
-            return {
+            body = {
                 url, category,
                 crawl_mode: 'depth',
                 max_depth: parseInt(depth) || 2,
                 schedule,
-                max_pages: parseInt(maxPages) || 50
+                max_pages: parseInt(maxPages) || 100
             };
         }
+        body.allow_offsite = allow_offsite;
+        body.offsite_depth = offsite_depth;
+        return body;
     }
 
     // ---- Save new source --------------------------------------------------
@@ -1594,6 +1646,8 @@
         const depth = $('sourceDepth').value;
         const schedVal = $('sourceSchedule').value;
         const maxPages = $('sourceMaxPages').value;
+        const domainLocked = $('sourceDomainLock').checked;
+        const offsiteDepth = $('sourceOffsiteDepth').value;
 
         // Clear previous errors
         addSourceForm.querySelectorAll('.field-error').forEach(el => el.classList.remove('field-error'));
@@ -1612,7 +1666,7 @@
         }
         if (errors.length) { showError(`${errors.join(', ')} ${errors.length === 1 ? 'is' : 'are'} required`); return; }
 
-        const body = buildSourceBody(includeVal, url, category, depth, schedVal, maxPages);
+        const body = buildSourceBody(includeVal, url, category, depth, schedVal, maxPages, domainLocked, offsiteDepth);
 
         try {
             const resp = await fetch(`${API_BASE}/scrape-sources`, {
@@ -1764,13 +1818,27 @@
                                     </div>
                                     <div class="form-group">
                                         <label>Max pages</label>
-                                        <input type="number" id="editMaxPages-${src.id}" value="${src.max_pages || 50}" min="1" max="500">
+                                        <input type="number" id="editMaxPages-${src.id}" value="${src.max_pages || 100}" min="1" max="500">
                                     </div>
                                 </div>
                                 <div class="form-row">
                                     <div class="form-group full-width">
                                         <label>Exclude patterns</label>
                                         <input type="text" id="editExclude-${src.id}" class="exclude-input" placeholder="/blog/*, /tags/*">
+                                    </div>
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label class="checkbox-label">
+                                            <input type="checkbox" id="editDomainLock-${src.id}" ${src.allow_offsite ? '' : 'checked'}>
+                                            Keep within domain
+                                        </label>
+                                    </div>
+                                    <div class="form-group offsite-depth-group" id="editOffsiteDepthGroup-${src.id}" style="display:${src.allow_offsite ? '' : 'none'};">
+                                        <label>Off-domain depth</label>
+                                        <select id="editOffsiteDepth-${src.id}">
+                                            ${[1,2,3].map(d=>`<option value="${d}" ${(src.offsite_depth||1)===d?'selected':''}>${d} level${d>1?'s':''}</option>`).join('')}
+                                        </select>
                                     </div>
                                 </div>
                             </div>
@@ -1806,6 +1874,48 @@
 
             // Include radio group handlers
             const editIncludeGroup = $(`editIncludeGroup-${src.id}`);
+            const editDepthSelect = $(`editDepth-${src.id}`);
+
+            // Helper: sync edit include group disabled state from depth
+            function syncEditIncludeFromDepth() {
+                if (!editIncludeGroup || !editDepthSelect) return;
+                const depthVal = parseInt(editDepthSelect.value) || 2;
+                const radios = editIncludeGroup.querySelectorAll('input[type="radio"]');
+                if (depthVal >= 3) {
+                    editIncludeGroup.classList.add('disabled-group');
+                    radios.forEach(r => { r.disabled = true; });
+                } else {
+                    editIncludeGroup.classList.remove('disabled-group');
+                    const editUrl = $(`editUrl-${src.id}`);
+                    const hasPath = editUrl ? urlHasPath(editUrl.value.trim()) : false;
+                    radios.forEach(r => {
+                        if (r.value === 'path') {
+                            r.disabled = !hasPath;
+                        } else {
+                            r.disabled = false;
+                        }
+                    });
+                }
+            }
+
+            // Helper: sync edit depth disabled state from include selection
+            function syncEditDepthFromInclude() {
+                if (!editIncludeGroup || !editDepthSelect) return;
+                const sel = editIncludeGroup.querySelector('input[type="radio"]:checked');
+                if (!sel) return;
+                const depthVal = parseInt(editDepthSelect.value) || 2;
+                if (sel.value === 'just') {
+                    editDepthSelect.value = '1';
+                    editDepthSelect.disabled = false;
+                } else if (sel.value === 'linked') {
+                    if (depthVal <= 1) editDepthSelect.value = '2';
+                    editDepthSelect.disabled = false;
+                } else if (sel.value === 'path') {
+                    editDepthSelect.disabled = true;
+                }
+                syncEditIncludeFromDepth();
+            }
+
             if (editIncludeGroup) {
                 editIncludeGroup.querySelectorAll('input[type="radio"]').forEach(radio => {
                     radio.addEventListener('change', () => {
@@ -1814,15 +1924,17 @@
                             const r = lbl.querySelector('input[type="radio"]');
                             lbl.classList.toggle('selected', r && r.checked);
                         });
-                        // Sync depth
-                        if (radio.value === 'just') {
-                            $(`editDepth-${src.id}`).value = '1';
-                        } else if (radio.value === 'linked') {
-                            $(`editDepth-${src.id}`).value = '2';
-                        }
+                        syncEditDepthFromInclude();
                     });
                 });
             }
+
+            if (editDepthSelect) {
+                editDepthSelect.addEventListener('change', syncEditIncludeFromDepth);
+            }
+
+            // Apply initial state based on loaded source data
+            syncEditDepthFromInclude();
 
             // URL change updates path option
             const editUrl = $(`editUrl-${src.id}`);
@@ -1857,6 +1969,15 @@
                 advToggle.addEventListener('click', () => {
                     const isOpen = advBody.classList.toggle('open');
                     advToggle.classList.toggle('open', isOpen);
+                });
+            }
+
+            // Domain lock checkbox in edit form
+            const editDomainLock = $(`editDomainLock-${src.id}`);
+            if (editDomainLock) {
+                editDomainLock.addEventListener('change', () => {
+                    const locked = editDomainLock.checked;
+                    $(`editOffsiteDepthGroup-${src.id}`).style.display = locked ? 'none' : '';
                 });
             }
         });
@@ -1907,10 +2028,12 @@
             const depth = $(`editDepth-${id}`).value;
             const schedVal = $(`editSchedule-${id}`).value;
             const maxPages = $(`editMaxPages-${id}`).value;
+            const domainLocked = $(`editDomainLock-${id}`) ? $(`editDomainLock-${id}`).checked : true;
+            const offsiteDepth = $(`editOffsiteDepth-${id}`) ? $(`editOffsiteDepth-${id}`).value : '1';
 
             if (!url || !category) { showError('URL and Category are required'); return; }
 
-            const body = buildSourceBody(includeVal, url, category, depth, schedVal, maxPages);
+            const body = buildSourceBody(includeVal, url, category, depth, schedVal, maxPages, domainLocked, offsiteDepth);
 
             try {
                 const resp = await fetch(`${API_BASE}/scrape-sources/${id}`, {

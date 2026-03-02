@@ -28,3 +28,5 @@ Thumbs.db
 
 # Scraper wake signal file
 .scraper_wake
+
+/debug_uploads

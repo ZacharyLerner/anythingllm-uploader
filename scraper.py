@@ -4,7 +4,8 @@ Background scraper process for the Knowledge Base application.
 Runs alongside app.py as a separate long-lived process.  It shares the same
 SQLite database and polls for pending ``scrape_jobs`` rows.  When a job is
 found it performs a breadth-first crawl of the configured website, extracts
-readable content with *trafilatura*, and uploads each page to AnythingLLM.
+readable content with *BeautifulSoup* and converts it to markdown via
+*markdownify* (preserving all links), and uploads each page to AnythingLLM.
 
 APScheduler runs in the background and creates new jobs for sources that
 have a recurring schedule (daily / weekly / monthly).
@@ -17,6 +18,7 @@ Graceful shutdown:
     in-progress page, then the process exits cleanly.
 """
 
+import copy
 import hashlib
 import json
 import logging
@@ -31,15 +33,16 @@ from typing import Optional, Tuple
 from urllib.parse import urljoin, urlparse, urlunparse
 
 import requests
-import trafilatura
+import markdownify
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from bs4 import BeautifulSoup
 
-from anythingllm import embed_document, upload_document
+from anythingllm import embed_document, remove_document, upload_document
 from config import (
     API_URL,
     API_KEY,
+    DEBUG_UPLOAD_DIR,
     JOB_POLL_INTERVAL,
     MAX_PAGES_PER_JOB,
     REQUEST_DELAY,
@@ -62,6 +65,32 @@ log = logging.getLogger(__name__)
 # Global flag set by the signal handler so loops can exit cleanly.
 # ---------------------------------------------------------------------------
 _shutdown_requested = False
+
+# ---------------------------------------------------------------------------
+# Debug upload interception (shared with app.py via the same env var).
+# ---------------------------------------------------------------------------
+if DEBUG_UPLOAD_DIR:
+    os.makedirs(DEBUG_UPLOAD_DIR, exist_ok=True)
+    log.info("Debug upload interception ENABLED -> %s", DEBUG_UPLOAD_DIR)
+
+
+def _debug_save_file(filename: str, content: bytes) -> None:
+    """Save a copy of *content* to DEBUG_UPLOAD_DIR if debugging is enabled."""
+    if not DEBUG_UPLOAD_DIR:
+        return
+    dest = os.path.join(DEBUG_UPLOAD_DIR, filename)
+    if os.path.exists(dest):
+        base, ext = os.path.splitext(filename)
+        counter = 1
+        while os.path.exists(dest):
+            dest = os.path.join(DEBUG_UPLOAD_DIR, f"{base}_{counter}{ext}")
+            counter += 1
+    try:
+        with open(dest, "wb") as f:
+            f.write(content)
+        log.info("Debug: saved scraped upload to %s (%d bytes)", dest, len(content))
+    except OSError:
+        log.warning("Debug: failed to save scraped upload to %s", dest)
 
 
 def _check_wake_signal() -> bool:
@@ -235,33 +264,163 @@ def _fetch_page(url: str) -> Tuple[Optional[str], Optional[str]]:
 
 
 def _extract_content(html: str, url: str) -> Tuple[Optional[str], Optional[str]]:
-    """Extract readable content from *html* via trafilatura.
+    """Extract page content using BeautifulSoup + markdownify.
+
+    Finds the main content container, strips junk elements, resolves
+    relative URLs to absolute, converts to markdown (preserving all links),
+    and appends a "Related Pages" section with nav/sidebar/breadcrumb links.
 
     Returns ``(title, markdown)`` or ``(None, None)`` when the page has
     insufficient text.
     """
-    content = trafilatura.extract(
-        html,
-        url=url,
-        include_links=True,
-        include_tables=True,
-        include_images=False,
-        include_comments=False,
-        output_format="txt",
-        favor_recall=True,
-    )
-    if not content or len(content.strip()) < 50:
+    soup = BeautifulSoup(html, "html.parser")
+
+    # --- Step A: Find the content container via fallback chain ----------
+    container = None
+    _selectors = [
+        lambda s: s.select_one(".entry-content"),  # WordPress standard
+        lambda s: s.select_one("[role='main']"),  # ARIA main landmark
+        lambda s: s.find("main"),  # HTML5 <main>
+        lambda s: s.find("article"),  # <article>
+        lambda s: s.find("body"),  # last resort
+    ]
+    for selector_fn in _selectors:
+        candidate = selector_fn(soup)
+        if candidate and len(candidate.get_text(strip=True)) > 50:
+            container = candidate
+            break
+
+    if container is None:
+        log.warning("No suitable content container found for %s", url)
         return None, None
 
-    metadata = trafilatura.extract_metadata(html, default_url=url)
-    title = metadata.title if metadata and metadata.title else None
+    # --- Step B: Clean junk elements from a copy of the container ------
+    cleaned = copy.copy(container)
 
+    # Tags that are always noise.
+    for tag_name in ("script", "style", "noscript", "iframe"):
+        for el in cleaned.find_all(tag_name):
+            el.decompose()
+
+    # Top-level page chrome (NOT heading tags h1-h6).
+    for tag_name in ("header", "footer"):
+        for el in cleaned.find_all(tag_name):
+            el.decompose()
+
+    # Elements whose class or id match common junk patterns.
+    _junk_patterns = ("cookie", "popup", "modal", "advertisement", "ad-", "banner")
+    for el in cleaned.find_all(True):
+        classes = " ".join(el.get("class", [])).lower()
+        el_id = (el.get("id") or "").lower()
+        if any(pat in classes or pat in el_id for pat in _junk_patterns):
+            el.decompose()
+
+    # --- Step C: Resolve relative URLs to absolute ---------------------
+    for a_tag in cleaned.find_all("a", href=True):
+        href = a_tag["href"].strip()
+        if href and not href.startswith(("#", "mailto:", "tel:", "javascript:")):
+            a_tag["href"] = urljoin(url, href)
+
+    # --- Step D: Convert to markdown -----------------------------------
+    main_markdown = markdownify.markdownify(
+        str(cleaned),
+        heading_style="ATX",
+        strip=["img"],
+    )
+    # Collapse excessive blank lines (3+ newlines → 2).
+    main_markdown = re.sub(r"\n{3,}", "\n\n", main_markdown).strip()
+
+    # Minimum length check on plain text (strip markdown formatting).
+    plain_text = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", main_markdown)  # links
+    plain_text = re.sub(r"[#*_`\-\|>\[\]]", "", plain_text)  # formatting chars
+    plain_text = plain_text.strip()
+    if len(plain_text) < 50:
+        log.warning(
+            "Extracted content too short for %s (%d chars)", url, len(plain_text)
+        )
+        return None, None
+
+    # --- Step E: Extract the page title --------------------------------
+    title = None
+    title_tag = soup.find("title")
+    if title_tag and title_tag.get_text(strip=True):
+        title = title_tag.get_text(strip=True)
+    else:
+        h1 = soup.find("h1")
+        if h1:
+            title = h1.get_text(strip=True) or None
+
+    # Strip common site-name suffixes (e.g. " | University of Rhode Island").
+    if title:
+        for sep in (" – ", " | ", " — "):
+            if sep in title:
+                title = title.split(sep)[0].strip()
+                break
+
+    # --- Step F: Extract supplementary navigation links ----------------
+    # Collect absolute URLs already in the main markdown for dedup.
+    main_links = set(re.findall(r"\]\((https?://[^)]+)\)", main_markdown))
+
+    nav_links: list[tuple[str, str]] = []  # (text, absolute_url)
+    seen_urls: set[str] = set()
+
+    # Gather navigation containers from the ORIGINAL soup.
+    nav_containers = []
+    nav_containers.extend(soup.find_all("nav"))
+    for selector in [
+        ".sidebar",
+        "#sidebar",
+        "aside",
+        ".cl-menu",
+        ".localnav",
+        "#localnav",
+        ".subnav",
+        "#subnav",
+    ]:
+        if selector.startswith("."):
+            nav_containers.extend(soup.find_all(class_=selector.lstrip(".")))
+        elif selector.startswith("#"):
+            found = soup.find(id=selector.lstrip("#"))
+            if found:
+                nav_containers.append(found)
+        else:
+            nav_containers.extend(soup.find_all(selector))
+    for el in soup.find_all(class_="breadcrumb"):
+        nav_containers.append(el)
+
+    for nav_container in nav_containers:
+        for a_tag in nav_container.find_all("a", href=True):
+            href = a_tag["href"].strip()
+            if not href or href.startswith(("#", "mailto:", "tel:", "javascript:")):
+                continue
+            absolute = urljoin(url, href)
+            if not absolute.startswith(("http://", "https://")):
+                continue
+            parsed_href = urlparse(absolute)
+            if any(parsed_href.path.lower().endswith(ext) for ext in _SKIP_EXTENSIONS):
+                continue
+            normalized = _normalize_url(absolute)
+            if normalized in seen_urls or normalized in main_links:
+                continue
+            seen_urls.add(normalized)
+            link_text = a_tag.get_text(strip=True)
+            if not link_text:
+                continue
+            nav_links.append((link_text, normalized))
+
+    # --- Step G: Assemble final document -------------------------------
     parts = []
     if title:
         parts.append(f"# {title}\n")
     parts.append(f"Source: {url}\n")
     parts.append("---\n")
-    parts.append(content)
+    parts.append(main_markdown)
+
+    if nav_links:
+        parts.append("\n\n## Related Pages\n")
+        for text, link_url in nav_links:
+            parts.append(f"- [{text}]({link_url})")
+
     return title, "\n".join(parts)
 
 
@@ -270,7 +429,9 @@ def _upload_and_embed(content: str, filename: str, workspace: str):
 
     Returns ``(location, None)`` on success or ``(None, error)`` on failure.
     """
-    location, err = upload_document(filename, content.encode("utf-8"), "text/markdown")
+    content_bytes = content.encode("utf-8")
+    _debug_save_file(filename, content_bytes)
+    location, err = upload_document(filename, content_bytes, "text/markdown")
     if err or not location:
         return None, f"Upload failed: {err}"
     ok, embed_err = embed_document(workspace, location)
@@ -284,11 +445,49 @@ def _upload_and_embed(content: str, filename: str, workspace: str):
 # ===================================================================
 
 
+def _clear_source_documents(workspace: str, source_id: int, job_id: int):
+    """Remove all existing scraped documents for a source from AnythingLLM
+    and the local database.  Called at the start of every scrape so the
+    source's documents are always a fresh snapshot of the site."""
+    with open_db() as db:
+        docs = db.execute(
+            "SELECT id, location FROM documents "
+            "WHERE source_id = ? AND source_type = 'scrape'",
+            (source_id,),
+        ).fetchall()
+
+        if not docs:
+            return
+
+        log.info(
+            "[Job %s] Clearing %d existing document(s) before re-scrape",
+            job_id,
+            len(docs),
+        )
+
+        for doc in docs:
+            ok, err = remove_document(workspace, doc["location"])
+            if not ok:
+                log.warning(
+                    "[Job %s] Failed to remove doc %s from AnythingLLM: %s",
+                    job_id,
+                    doc["location"],
+                    err,
+                )
+
+        with db:
+            db.execute(
+                "DELETE FROM documents WHERE source_id = ? AND source_type = 'scrape'",
+                (source_id,),
+            )
+
+
 def _crawl_source(source: dict, job_id: int) -> tuple[int, int]:
     """Breadth-first crawl of a scrape source.
 
-    Discovers links up to ``max_depth`` levels from the seed URL, extracts
-    readable content, and uploads each page to AnythingLLM.
+    Deletes all existing documents for this source first, then discovers
+    links up to ``max_depth`` levels from the seed URL, extracts readable
+    content, and uploads each page to AnythingLLM.
 
     Returns ``(pages_found, pages_scraped)``.
     """
@@ -306,6 +505,9 @@ def _crawl_source(source: dict, job_id: int) -> tuple[int, int]:
         category,
     )
 
+    # --- Delete all existing documents for this source before re-scraping ---
+    _clear_source_documents(workspace, source_id, job_id)
+
     disallowed = _fetch_robots_disallowed(seed_url)
 
     # BFS queue: (url, depth).  Using deque for efficient popleft().
@@ -313,17 +515,6 @@ def _crawl_source(source: dict, job_id: int) -> tuple[int, int]:
     visited: set[str] = set()
     pages_found = 0
     pages_scraped = 0
-
-    # Pre-load URLs already scraped for this source to avoid duplicates.
-    with open_db() as db:
-        already_scraped = {
-            row["source_url"]
-            for row in db.execute(
-                "SELECT source_url FROM documents "
-                "WHERE source_id = ? AND source_type = 'scrape'",
-                (source_id,),
-            ).fetchall()
-        }
 
     # Keep a single DB connection for progress updates inside the loop to
     # avoid the overhead of opening/closing on every page.
@@ -360,11 +551,6 @@ def _crawl_source(source: dict, job_id: int) -> tuple[int, int]:
                 for link in _extract_links(html, url):
                     if link not in visited:
                         queue.append((link, depth + 1))
-
-            # Skip content extraction if we already have this page.
-            if url in already_scraped:
-                log.debug("[Job %s] Already scraped, skipping: %s", job_id, url)
-                continue
 
             title, markdown = _extract_content(html, url)
             if not markdown:
@@ -411,9 +597,10 @@ def _crawl_source(source: dict, job_id: int) -> tuple[int, int]:
 def _crawl_source_prefix(source: dict, job_id: int) -> tuple[int, int]:
     """Prefix-based crawl of a scrape source.
 
-    Starting from the seed URL, follows only links whose path starts with
-    one of the allowed prefixes AND whose domain matches the seed URL.
-    Stops when all reachable in-scope pages are visited or ``max_pages``
+    Deletes all existing documents for this source first, then starting
+    from the seed URL, follows only links whose path starts with one of
+    the allowed prefixes AND whose domain matches the seed URL.  Stops
+    when all reachable in-scope pages are visited or ``max_pages``
     is reached.
 
     Returns ``(pages_found, pages_scraped)``.
@@ -441,6 +628,9 @@ def _crawl_source_prefix(source: dict, job_id: int) -> tuple[int, int]:
         category,
     )
 
+    # --- Delete all existing documents for this source before re-scraping ---
+    _clear_source_documents(workspace, source_id, job_id)
+
     disallowed = _fetch_robots_disallowed(seed_url)
 
     # BFS queue -- no depth tracking needed in prefix mode.
@@ -459,17 +649,6 @@ def _crawl_source_prefix(source: dict, job_id: int) -> tuple[int, int]:
             return False
         path = parsed.path
         return any(path.startswith(prefix) for prefix in allowed_prefixes)
-
-    # Pre-load URLs already scraped for this source to avoid duplicates.
-    with open_db() as db:
-        already_scraped = {
-            row["source_url"]
-            for row in db.execute(
-                "SELECT source_url FROM documents "
-                "WHERE source_id = ? AND source_type = 'scrape'",
-                (source_id,),
-            ).fetchall()
-        }
 
     with open_db() as db:
         while queue and pages_found < max_pages and not _shutdown_requested:
@@ -503,11 +682,6 @@ def _crawl_source_prefix(source: dict, job_id: int) -> tuple[int, int]:
             for link in _extract_links(html, url):
                 if link not in visited and _is_in_prefix_scope(link):
                     queue.append(link)
-
-            # Skip content extraction if we already have this page.
-            if url in already_scraped:
-                log.debug("[Job %s] Already scraped, skipping: %s", job_id, url)
-                continue
 
             title, markdown = _extract_content(html, url)
             if not markdown:

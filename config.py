@@ -54,3 +54,11 @@ JOB_POLL_INTERVAL: int = 10  # seconds between job-queue polls
 WAKE_SIGNAL_PATH: str = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), ".scraper_wake"
 )
+
+# ---------------------------------------------------------------------------
+# Debug upload interception -- when DEBUG_UPLOAD_DIR is set to a directory
+# path, every file that is about to be sent to AnythingLLM is also saved
+# there for manual inspection.  Files accumulate until you remove them.
+# Leave empty or unset to disable.
+# ---------------------------------------------------------------------------
+DEBUG_UPLOAD_DIR: str = os.getenv("DEBUG_UPLOAD_DIR", "")

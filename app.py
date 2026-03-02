@@ -35,7 +35,13 @@ from anythingllm import (
     workspace_exists,
 )
 
-from config import APP_API_KEY, MAX_UPLOAD_BYTES, TEXT_EXTENSIONS, WAKE_SIGNAL_PATH
+from config import (
+    APP_API_KEY,
+    DEBUG_UPLOAD_DIR,
+    MAX_UPLOAD_BYTES,
+    TEXT_EXTENSIONS,
+    WAKE_SIGNAL_PATH,
+)
 from db import init_db, open_db
 
 # ---------------------------------------------------------------------------
@@ -52,6 +58,41 @@ log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_BYTES
+
+# ---------------------------------------------------------------------------
+# Debug upload interception
+# When DEBUG_UPLOAD_DIR is set, every file destined for AnythingLLM is saved
+# to that directory so you can inspect exactly what gets uploaded.  Files
+# persist until you manually remove them.
+# ---------------------------------------------------------------------------
+if DEBUG_UPLOAD_DIR:
+    os.makedirs(DEBUG_UPLOAD_DIR, exist_ok=True)
+    log.info("Debug upload interception ENABLED -> %s", DEBUG_UPLOAD_DIR)
+
+
+def _debug_save_file(filename: str, content: bytes) -> None:
+    """Save a copy of *content* to DEBUG_UPLOAD_DIR if debugging is enabled.
+
+    If a file with the same name already exists, a numeric suffix is appended
+    to avoid overwriting previous captures.
+    """
+    if not DEBUG_UPLOAD_DIR:
+        return
+    dest = os.path.join(DEBUG_UPLOAD_DIR, filename)
+    # Avoid overwriting earlier captures of the same filename.
+    if os.path.exists(dest):
+        base, ext = os.path.splitext(filename)
+        counter = 1
+        while os.path.exists(dest):
+            dest = os.path.join(DEBUG_UPLOAD_DIR, f"{base}_{counter}{ext}")
+            counter += 1
+    try:
+        with open(dest, "wb") as f:
+            f.write(content)
+        log.info("Debug: saved upload to %s (%d bytes)", dest, len(content))
+    except OSError:
+        log.warning("Debug: failed to save upload to %s", dest)
+
 
 # ---------------------------------------------------------------------------
 # Optional Docling integration for rich document-to-Markdown conversion.
@@ -370,6 +411,9 @@ def upload(workspace):
                     upload_content = md.encode("utf-8")
                     upload_ct = "text/markdown"
 
+            # --- Debug: save a copy before sending to AnythingLLM ----------------
+            _debug_save_file(upload_filename, upload_content)
+
             # --- Step 2: Upload to AnythingLLM ----------------------------------
             yield _stream_json({"step": "uploading"})
             location, err = upload_document(upload_filename, upload_content, upload_ct)
@@ -478,6 +522,9 @@ def api_upload(workspace):
             upload_filename = os.path.splitext(original_filename)[0] + ".md"
             upload_content = md.encode("utf-8")
             upload_ct = "text/markdown"
+
+    # --- Debug: save a copy before sending to AnythingLLM ---
+    _debug_save_file(upload_filename, upload_content)
 
     location, err = upload_document(upload_filename, upload_content, upload_ct)
     if err or not location:

@@ -1484,7 +1484,9 @@
             if (job) {
                 if (job.status === 'running')   statusBadge = `<span class="source-badge status-running">Scraping... (${job.pages_scraped||0} pages)</span>`;
                 if (job.status === 'pending')   statusBadge = `<span class="source-badge status-pending">Queued</span>`;
-                if (job.status === 'completed') statusBadge = `<span class="source-badge status-completed">Completed</span>`;
+                if (job.status === 'completed') {
+                    statusBadge = `<span class="source-badge status-completed">Scraped ${job.pages_scraped||0} of ${job.pages_found||0} pages</span>`;
+                }
                 if (job.status === 'failed') {
                     statusBadge = `<span class="source-badge status-failed">Failed</span>`;
                     if (job.error) statusDetail = `<br><span style="font-size:11px;color:var(--error);">${escapeHtml(job.error)}</span>`;

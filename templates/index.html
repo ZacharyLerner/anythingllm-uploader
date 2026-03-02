@@ -446,75 +446,117 @@
         .edit-form-inline { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--gray-100); }
 
         /* =============================================================
-           CRAWL MODE SEGMENTED CONTROL
+           WHAT-TO-INCLUDE RADIO GROUP
            ============================================================= */
-        .crawl-mode-toggle {
-            display: inline-flex;
+        .include-radio-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .include-radio-group label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
             border: 1px solid var(--gray-100);
             border-radius: 6px;
-            overflow: hidden;
-            background: var(--gray-50);
-        }
-        .crawl-mode-toggle label {
-            padding: 7px 14px;
             font-size: 13px;
             font-weight: 500;
+            color: var(--uri-blue);
             cursor: pointer;
-            color: var(--gray-600);
             transition: all 0.15s;
-            border-right: 1px solid var(--gray-100);
-            user-select: none;
+            background: white;
         }
-        .crawl-mode-toggle label:last-child { border-right: none; }
-        .crawl-mode-toggle input[type="radio"] { display: none; }
-        .crawl-mode-toggle input[type="radio"]:checked + label {
-            background: var(--uri-blue);
-            color: white;
+        .include-radio-group label:hover { border-color: var(--uri-blue-light); }
+        .include-radio-group input[type="radio"] {
+            width: 16px; height: 16px;
+            accent-color: var(--uri-blue);
+            cursor: pointer; flex-shrink: 0;
+        }
+        .include-radio-group input[type="radio"]:checked + span {
+            color: var(--uri-blue);
+        }
+        .include-radio-group label.selected {
+            border-color: var(--uri-blue-light);
+            background: #f0f7fc;
+        }
+        .include-radio-group label.disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+            pointer-events: none;
+        }
+        .include-radio-group .path-hint {
+            font-weight: 400;
+            color: var(--gray-600);
+            font-size: 12px;
         }
 
-        /* Prefix tags input */
-        .prefix-tags-wrap {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 4px;
-            padding: 5px 8px;
-            border: 1px solid var(--gray-100);
-            border-radius: 6px;
-            background: white;
-            min-height: 36px;
-            align-items: center;
-            cursor: text;
-            transition: border-color 0.2s;
+        /* Category dropdown with "Create new" */
+        .category-select-wrap { position: relative; }
+        .category-new-input {
+            margin-top: 6px;
         }
-        .prefix-tags-wrap:focus-within { border-color: var(--uri-blue-light); }
-        .prefix-tags-wrap.field-error  { border-color: #dc2626; }
-        .prefix-tag {
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-            padding: 2px 8px;
-            background: #e8f4f8;
-            color: var(--uri-blue);
-            border-radius: 4px;
+
+        /* =============================================================
+           ADVANCED OPTIONS SECTION
+           ============================================================= */
+        .advanced-toggle-link {
+            background: none; border: none;
+            color: var(--uri-blue-light);
+            font-size: 13px; font-weight: 500;
+            cursor: pointer; padding: 0;
+            text-decoration: none;
+            display: inline-flex; align-items: center; gap: 4px;
+        }
+        .advanced-toggle-link:hover { color: var(--uri-blue); text-decoration: underline; }
+        .advanced-toggle-link .adv-chevron {
+            display: inline-block;
+            font-size: 10px;
+            transition: transform 0.15s;
+        }
+        .advanced-toggle-link.open .adv-chevron { transform: rotate(90deg); }
+
+        .advanced-body {
+            overflow: hidden;
+            max-height: 0;
+            opacity: 0;
+            transition: max-height 0.2s ease, opacity 0.15s ease;
+            margin-top: 0;
+        }
+        .advanced-body.open {
+            max-height: 600px;
+            opacity: 1;
+            margin-top: 10px;
+        }
+
+        .advanced-summary {
             font-size: 12px;
-            font-weight: 500;
-        }
-        .prefix-tag .remove-tag {
-            cursor: pointer;
-            font-size: 14px;
-            line-height: 1;
             color: var(--gray-600);
-            margin-left: 2px;
+            margin-left: 8px;
+            font-weight: 400;
         }
-        .prefix-tag .remove-tag:hover { color: var(--error); }
-        .prefix-tags-input {
-            border: none;
-            outline: none;
-            font-size: 13px;
-            font-family: inherit;
-            flex: 1;
-            min-width: 120px;
-            padding: 2px 0;
+
+        .auth-fields {
+            display: none;
+            gap: 12px;
+            margin-top: 8px;
+        }
+        .auth-fields.visible { display: flex; }
+
+        .checkbox-label {
+            display: flex; align-items: center; gap: 6px;
+            font-size: 13px; color: var(--uri-blue); cursor: pointer;
+        }
+        .checkbox-label input[type="checkbox"] {
+            width: 16px; height: 16px;
+            accent-color: var(--uri-blue);
+            cursor: pointer;
+        }
+
+        /* Exclude patterns input */
+        .exclude-input {
+            font-family: 'SF Mono', Monaco, monospace;
+            font-size: 12px;
         }
     </style>
 </head>
@@ -610,59 +652,107 @@
 
             <!-- Add-source form (hidden by default) -->
             <div class="add-source-form" id="addSourceForm">
+                <!-- Row 1: Website URL -->
                 <div class="form-row">
                     <div class="form-group full-width">
                         <label for="sourceUrl">Website URL</label>
                         <input type="url" id="sourceUrl" placeholder="https://example.com/docs">
                     </div>
                 </div>
+
+                <!-- Row 2: What to include -->
+                <div class="form-row">
+                    <div class="form-group full-width">
+                        <label>What to include</label>
+                        <div class="include-radio-group" id="includeGroup">
+                            <label id="includeJustLabel">
+                                <input type="radio" name="sourceInclude" id="includeJust" value="just">
+                                <span>Just this page</span>
+                            </label>
+                            <label id="includeLinkedLabel" class="selected">
+                                <input type="radio" name="sourceInclude" id="includeLinked" value="linked" checked>
+                                <span>This page + linked pages</span>
+                            </label>
+                            <label id="includePathLabel" class="disabled">
+                                <input type="radio" name="sourceInclude" id="includePath" value="path" disabled>
+                                <span>Everything under <span class="path-hint" id="pathHint">/path/</span></span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Row 3: Category + Update -->
                 <div class="form-row">
                     <div class="form-group">
                         <label for="sourceCategory">Category <span class="required-star">*</span></label>
-                        <input type="text" id="sourceCategory" placeholder="e.g. IT Docs, HR Policies">
-                    </div>
-                    <div class="form-group">
-                        <label>Crawl Mode <span class="required-star">*</span></label>
-                        <div class="crawl-mode-toggle">
-                            <input type="radio" name="sourceCrawlMode" id="crawlModeDepth" value="depth" checked>
-                            <label for="crawlModeDepth">Depth-based</label>
-                            <input type="radio" name="sourceCrawlMode" id="crawlModePrefix" value="prefix">
-                            <label for="crawlModePrefix">Prefix-based</label>
-                        </div>
-                    </div>
-                    <!-- Depth-based fields -->
-                    <div class="form-group" id="depthGroup">
-                        <label for="sourceDepth">Crawl Depth <span class="required-star">*</span></label>
-                        <select id="sourceDepth">
-                            <option value="1">1 - Original page only</option>
-                            <option value="2" selected>2 - Original + linked pages</option>
-                            <option value="3">3 - Two levels deep</option>
-                            <option value="4">4 - Three levels deep</option>
-                            <option value="5">5 - Four levels deep</option>
+                        <select id="sourceCategory">
+                            <option value="" disabled selected>Select category...</option>
+                            <!-- Populated dynamically from existing sources -->
+                            <option value="__new__">+ Create new...</option>
                         </select>
-                    </div>
-                    <!-- Prefix-based fields (hidden by default) -->
-                    <div class="form-group" id="prefixGroup" style="display:none; min-width:220px;">
-                        <label>Allowed Prefixes <span class="required-star">*</span></label>
-                        <div class="prefix-tags-wrap" id="sourcePrefixTags">
-                            <input type="text" class="prefix-tags-input" id="sourcePrefixInput" placeholder="e.g. /enrollment/ then Enter">
-                        </div>
-                    </div>
-                    <div class="form-group" id="maxPagesGroup" style="display:none;">
-                        <label for="sourceMaxPages">Max Pages</label>
-                        <input type="number" id="sourceMaxPages" value="500" min="1" max="10000">
+                        <input type="text" id="sourceCategoryNew" class="category-new-input" placeholder="New category name" style="display:none;">
                     </div>
                     <div class="form-group">
-                        <label for="sourceSchedule">Schedule <span class="required-star">*</span></label>
+                        <label for="sourceSchedule">Update</label>
                         <select id="sourceSchedule">
-                            <option value="" disabled selected>Select schedule...</option>
-                            <option value="manual">Manual only</option>
                             <option value="daily">Daily</option>
-                            <option value="weekly">Weekly</option>
+                            <option value="weekly" selected>Weekly</option>
                             <option value="monthly">Monthly</option>
+                            <option value="manual">Never</option>
                         </select>
                     </div>
                 </div>
+
+                <!-- Advanced options -->
+                <div style="margin-top: 6px; margin-bottom: 8px;">
+                    <button type="button" class="advanced-toggle-link" id="advancedToggle">
+                        <span class="adv-chevron">&#9654;</span> Advanced options
+                        <span class="advanced-summary" id="advancedSummary"></span>
+                    </button>
+                    <div class="advanced-body" id="advancedBody">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="sourceDepth">Crawl depth</label>
+                                <select id="sourceDepth">
+                                    <option value="1">1 level</option>
+                                    <option value="2" selected>2 levels</option>
+                                    <option value="3">3 levels</option>
+                                    <option value="4">4 levels</option>
+                                    <option value="5">5 levels</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="sourceMaxPages">Max pages</label>
+                                <input type="number" id="sourceMaxPages" value="50" min="1" max="500" placeholder="50">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group full-width">
+                                <label for="sourceExclude">Exclude patterns</label>
+                                <input type="text" id="sourceExclude" class="exclude-input" placeholder="/blog/*, /tags/*, /archive/*">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group full-width">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="sourceAuth">
+                                    Requires authentication
+                                </label>
+                                <div class="auth-fields" id="authFields">
+                                    <div class="form-group">
+                                        <label for="sourceAuthUser">Username</label>
+                                        <input type="text" id="sourceAuthUser" placeholder="Username">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="sourceAuthPass">Password</label>
+                                        <input type="password" id="sourceAuthPass" placeholder="Password">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="form-actions">
                     <button class="btn secondary" id="cancelSourceBtn">Cancel</button>
                     <button class="btn success" id="saveSourceBtn">Save Source</button>
@@ -1280,119 +1370,163 @@
 
     const addSourceForm = $('addSourceForm');
 
-    // ---- Crawl Mode Toggle ------------------------------------------------
-    function getSelectedCrawlMode(formEl) {
-        const radio = formEl.querySelector('input[name="sourceCrawlMode"]:checked');
-        return radio ? radio.value : 'depth';
-    }
-
-    function applyCrawlModeVisibility(mode, depthEl, prefixEl, maxPagesEl) {
-        if (mode === 'prefix') {
-            depthEl.style.display = 'none';
-            prefixEl.style.display = '';
-            maxPagesEl.style.display = '';
-        } else {
-            depthEl.style.display = '';
-            prefixEl.style.display = 'none';
-            maxPagesEl.style.display = 'none';
-        }
-    }
-
-    addSourceForm.querySelectorAll('input[name="sourceCrawlMode"]').forEach(radio => {
-        radio.addEventListener('change', () => {
-            applyCrawlModeVisibility(radio.value, $('depthGroup'), $('prefixGroup'), $('maxPagesGroup'));
-        });
-    });
-
-    // ---- Prefix Tag Management (Add Source form) --------------------------
-    let addFormPrefixes = [];
-
-    function renderPrefixTags(containerEl, inputEl, prefixesArr, onRemove) {
-        // Remove existing tags
-        containerEl.querySelectorAll('.prefix-tag').forEach(t => t.remove());
-        prefixesArr.forEach((p, i) => {
-            const tag = document.createElement('span');
-            tag.className = 'prefix-tag';
-            tag.innerHTML = `${escapeHtml(p)}<span class="remove-tag" data-index="${i}">&times;</span>`;
-            containerEl.insertBefore(tag, inputEl);
-        });
-        // Attach remove handlers
-        containerEl.querySelectorAll('.remove-tag').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                onRemove(parseInt(btn.dataset.index));
-            });
-        });
-    }
-
-    function addPrefix(inputEl, containerEl, prefixesArr, renderFn) {
-        let val = inputEl.value.trim();
-        if (!val) return;
-        // Ensure it starts with /
-        if (!val.startsWith('/')) val = '/' + val;
-        // Ensure it ends with /
-        if (!val.endsWith('/')) val += '/';
-        if (!prefixesArr.includes(val)) {
-            prefixesArr.push(val);
-            renderFn();
-        }
-        inputEl.value = '';
-    }
-
-    $('sourcePrefixInput').addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ',') {
-            e.preventDefault();
-            addPrefix($('sourcePrefixInput'), $('sourcePrefixTags'), addFormPrefixes, renderAddFormPrefixes);
-        }
-    });
-    // Also add on blur
-    $('sourcePrefixInput').addEventListener('blur', () => {
-        if ($('sourcePrefixInput').value.trim()) {
-            addPrefix($('sourcePrefixInput'), $('sourcePrefixTags'), addFormPrefixes, renderAddFormPrefixes);
-        }
-    });
-    // Click on wrapper focuses input
-    $('sourcePrefixTags').addEventListener('click', () => $('sourcePrefixInput').focus());
-
-    function renderAddFormPrefixes() {
-        renderPrefixTags($('sourcePrefixTags'), $('sourcePrefixInput'), addFormPrefixes, (idx) => {
-            addFormPrefixes.splice(idx, 1);
-            renderAddFormPrefixes();
-        });
-    }
-
-    // ---- Auto-populate prefix from URL ------------------------------------
-    $('sourceUrl').addEventListener('change', () => {
-        if (getSelectedCrawlMode(addSourceForm) !== 'prefix') return;
-        autoPopulatePrefix($('sourceUrl').value, addFormPrefixes, renderAddFormPrefixes);
-    });
-    // Also auto-populate when switching to prefix mode
-    $('crawlModePrefix').addEventListener('change', () => {
-        if (addFormPrefixes.length === 0) {
-            autoPopulatePrefix($('sourceUrl').value, addFormPrefixes, renderAddFormPrefixes);
-        }
-    });
-
-    function autoPopulatePrefix(urlStr, prefixesArr, renderFn) {
-        if (!urlStr) return;
+    // ---- Helpers: extract URL path for "Everything under /path/" ----------
+    function getUrlPath(urlStr) {
+        if (!urlStr) return '';
         try {
             const u = new URL(urlStr);
-            let path = u.pathname;
-            // Only auto-populate if there's a meaningful path (not just /)
-            if (path && path !== '/') {
-                if (!path.endsWith('/')) path += '/';
-                if (!prefixesArr.includes(path)) {
-                    prefixesArr.push(path);
-                    renderFn();
-                }
+            let p = u.pathname;
+            if (p && p !== '/') {
+                if (!p.endsWith('/')) p += '/';
+                return p;
             }
-        } catch { /* invalid URL, ignore */ }
+        } catch { /* invalid URL */ }
+        return '';
     }
 
-    // Toggle add-source form
+    function urlHasPath(urlStr) {
+        return getUrlPath(urlStr) !== '';
+    }
+
+    // ---- "What to include" radio group logic (Add form) -------------------
+    function updateIncludeGroup() {
+        const url = $('sourceUrl').value.trim();
+        const hasPath = urlHasPath(url);
+        const pathLabel = $('includePathLabel');
+        const pathInput = $('includePath');
+        const pathHint = $('pathHint');
+
+        if (hasPath) {
+            pathLabel.classList.remove('disabled');
+            pathInput.disabled = false;
+            pathHint.textContent = getUrlPath(url);
+        } else {
+            pathLabel.classList.add('disabled');
+            pathInput.disabled = true;
+            pathHint.textContent = '/path/';
+            // If "path" was selected, fall back to default
+            if (pathInput.checked) {
+                $('includeLinked').checked = true;
+                highlightSelectedRadio('includeGroup');
+            }
+        }
+
+        // Sync advanced depth when radio changes
+        syncAdvancedFromInclude();
+    }
+
+    function highlightSelectedRadio(groupId) {
+        const group = $(groupId);
+        group.querySelectorAll('label').forEach(lbl => {
+            const radio = lbl.querySelector('input[type="radio"]');
+            if (radio && radio.checked) {
+                lbl.classList.add('selected');
+            } else {
+                lbl.classList.remove('selected');
+            }
+        });
+    }
+
+    function syncAdvancedFromInclude() {
+        const sel = addSourceForm.querySelector('input[name="sourceInclude"]:checked');
+        if (!sel) return;
+        if (sel.value === 'just') {
+            $('sourceDepth').value = '1';
+        } else if (sel.value === 'linked') {
+            $('sourceDepth').value = '2';
+        }
+        updateAdvancedSummary();
+    }
+
+    // Wire up radio group
+    addSourceForm.querySelectorAll('input[name="sourceInclude"]').forEach(radio => {
+        radio.addEventListener('change', () => {
+            highlightSelectedRadio('includeGroup');
+            syncAdvancedFromInclude();
+        });
+    });
+
+    // Update path option when URL changes
+    $('sourceUrl').addEventListener('input', updateIncludeGroup);
+    $('sourceUrl').addEventListener('change', updateIncludeGroup);
+
+    // ---- Category dropdown with "Create new" option -----------------------
+    function populateCategoryDropdown(selectEl, currentVal) {
+        const categories = new Set();
+        scrapeSources.forEach(s => { if (s.category) categories.add(s.category); });
+        const sorted = Array.from(categories).sort();
+
+        // Preserve the "Create new" option
+        const opts = [`<option value="" disabled ${!currentVal ? 'selected' : ''}>Select category...</option>`];
+        sorted.forEach(c => {
+            opts.push(`<option value="${escapeHtml(c)}" ${currentVal === c ? 'selected' : ''}>${escapeHtml(c)}</option>`);
+        });
+        opts.push(`<option value="__new__">+ Create new...</option>`);
+        selectEl.innerHTML = opts.join('');
+
+        // If currentVal isn't in the list, add it
+        if (currentVal && !categories.has(currentVal) && currentVal !== '__new__') {
+            const opt = document.createElement('option');
+            opt.value = currentVal;
+            opt.textContent = currentVal;
+            opt.selected = true;
+            selectEl.insertBefore(opt, selectEl.lastElementChild);
+        }
+    }
+
+    $('sourceCategory').addEventListener('change', () => {
+        if ($('sourceCategory').value === '__new__') {
+            $('sourceCategoryNew').style.display = '';
+            $('sourceCategoryNew').focus();
+        } else {
+            $('sourceCategoryNew').style.display = 'none';
+            $('sourceCategoryNew').value = '';
+        }
+    });
+
+    function getSelectedCategory() {
+        if ($('sourceCategory').value === '__new__') {
+            return $('sourceCategoryNew').value.trim();
+        }
+        return $('sourceCategory').value;
+    }
+
+    // ---- Advanced section toggle ------------------------------------------
+    $('advancedToggle').addEventListener('click', () => {
+        const body = $('advancedBody');
+        const link = $('advancedToggle');
+        const isOpen = body.classList.toggle('open');
+        link.classList.toggle('open', isOpen);
+    });
+
+    $('sourceAuth').addEventListener('change', () => {
+        $('authFields').classList.toggle('visible', $('sourceAuth').checked);
+    });
+
+    // Update summary whenever advanced fields change
+    ['sourceDepth', 'sourceMaxPages'].forEach(id => {
+        $(id).addEventListener('change', updateAdvancedSummary);
+        $(id).addEventListener('input', updateAdvancedSummary);
+    });
+
+    function updateAdvancedSummary() {
+        const parts = [];
+        const depth = $('sourceDepth').value;
+        const maxPages = $('sourceMaxPages').value;
+        const exclude = ($('sourceExclude') ? $('sourceExclude').value.trim() : '');
+        if (depth !== '2') parts.push(`Depth: ${depth}`);
+        if (maxPages && maxPages !== '50') parts.push(`Max: ${maxPages} pages`);
+        if (exclude) parts.push('Excludes set');
+        $('advancedSummary').textContent = parts.length ? parts.join(' \u00b7 ') : '';
+    }
+
+    // ---- Toggle add-source form -------------------------------------------
     $('addSourceToggleBtn').addEventListener('click', () => {
         addSourceForm.classList.toggle('visible');
-        if (addSourceForm.classList.contains('visible')) $('sourceUrl').focus();
+        if (addSourceForm.classList.contains('visible')) {
+            populateCategoryDropdown($('sourceCategory'), '');
+            $('sourceUrl').focus();
+        }
     });
     $('cancelSourceBtn').addEventListener('click', () => {
         addSourceForm.classList.remove('visible');
@@ -1402,26 +1536,64 @@
     function clearSourceForm() {
         $('sourceUrl').value = '';
         $('sourceCategory').value = '';
+        $('sourceCategoryNew').value = '';
+        $('sourceCategoryNew').style.display = 'none';
+        $('includeLinked').checked = true;
+        highlightSelectedRadio('includeGroup');
         $('sourceDepth').value = '2';
-        $('sourceSchedule').value = '';
-        $('crawlModeDepth').checked = true;
-        $('sourceMaxPages').value = '500';
-        $('sourcePrefixInput').value = '';
-        addFormPrefixes.length = 0;
-        renderAddFormPrefixes();
-        applyCrawlModeVisibility('depth', $('depthGroup'), $('prefixGroup'), $('maxPagesGroup'));
+        $('sourceSchedule').value = 'weekly';
+        $('sourceMaxPages').value = '50';
+        if ($('sourceExclude')) $('sourceExclude').value = '';
+        $('sourceAuth').checked = false;
+        $('authFields').classList.remove('visible');
+        if ($('sourceAuthUser')) $('sourceAuthUser').value = '';
+        if ($('sourceAuthPass')) $('sourceAuthPass').value = '';
+        $('advancedBody').classList.remove('open');
+        $('advancedToggle').classList.remove('open');
+        $('advancedSummary').textContent = '';
+        updateIncludeGroup();
         addSourceForm.querySelectorAll('.field-error').forEach(el => el.classList.remove('field-error'));
     }
 
-    // Save new source
+    // ---- Map UI values to backend API body --------------------------------
+    function buildSourceBody(includeVal, url, category, depth, scheduleVal, maxPages) {
+        const schedule = scheduleVal === 'manual' ? null : (scheduleVal || null);
+
+        if (includeVal === 'just') {
+            // Just this page: depth-based with depth 1
+            return { url, category, crawl_mode: 'depth', max_depth: 1, schedule, max_pages: parseInt(maxPages) || 50 };
+        } else if (includeVal === 'path') {
+            // Everything under /path/: prefix-based
+            const path = getUrlPath(url);
+            return {
+                url, category,
+                crawl_mode: 'prefix',
+                allowed_prefixes: path ? [path] : [],
+                max_depth: 1,
+                max_pages: parseInt(maxPages) || 50,
+                schedule
+            };
+        } else {
+            // This page + linked pages: depth-based
+            return {
+                url, category,
+                crawl_mode: 'depth',
+                max_depth: parseInt(depth) || 2,
+                schedule,
+                max_pages: parseInt(maxPages) || 50
+            };
+        }
+    }
+
+    // ---- Save new source --------------------------------------------------
     $('saveSourceBtn').addEventListener('click', async () => {
-        const url      = $('sourceUrl').value.trim();
-        const category = $('sourceCategory').value.trim();
-        const crawlMode = getSelectedCrawlMode(addSourceForm);
-        const maxDepth = parseInt($('sourceDepth').value);
+        const url = $('sourceUrl').value.trim();
+        const category = getSelectedCategory();
+        const includeRadio = addSourceForm.querySelector('input[name="sourceInclude"]:checked');
+        const includeVal = includeRadio ? includeRadio.value : 'linked';
+        const depth = $('sourceDepth').value;
         const schedVal = $('sourceSchedule').value;
-        const schedule = schedVal === 'manual' ? null : (schedVal || null);
-        const maxPages = parseInt($('sourceMaxPages').value) || 500;
+        const maxPages = $('sourceMaxPages').value;
 
         // Clear previous errors
         addSourceForm.querySelectorAll('.field-error').forEach(el => el.classList.remove('field-error'));
@@ -1429,23 +1601,18 @@
         // Validate
         const errors = [];
         if (!url)      { errors.push('URL');       $('sourceUrl').classList.add('field-error'); }
-        if (!category) { errors.push('Category');  $('sourceCategory').classList.add('field-error'); }
-        if (crawlMode === 'depth' && !maxDepth) { errors.push('Depth'); $('sourceDepth').classList.add('field-error'); }
-        if (crawlMode === 'prefix' && addFormPrefixes.length === 0) {
-            errors.push('Allowed Prefixes');
-            $('sourcePrefixTags').classList.add('field-error');
+        if (!category) {
+            errors.push('Category');
+            $('sourceCategory').classList.add('field-error');
+            if ($('sourceCategory').value === '__new__') $('sourceCategoryNew').classList.add('field-error');
         }
-        if (!schedVal) { errors.push('Schedule');  $('sourceSchedule').classList.add('field-error'); }
+        if (includeVal === 'path' && !urlHasPath(url)) {
+            errors.push('URL must have a path for this option');
+            $('sourceUrl').classList.add('field-error');
+        }
         if (errors.length) { showError(`${errors.join(', ')} ${errors.length === 1 ? 'is' : 'are'} required`); return; }
 
-        const body = { url, category, crawl_mode: crawlMode, schedule };
-        if (crawlMode === 'depth') {
-            body.max_depth = maxDepth;
-        } else {
-            body.allowed_prefixes = [...addFormPrefixes];
-            body.max_pages = maxPages;
-            body.max_depth = 1; // not used but satisfies schema default
-        }
+        const body = buildSourceBody(includeVal, url, category, depth, schedVal, maxPages);
 
         try {
             const resp = await fetch(`${API_BASE}/scrape-sources`, {
@@ -1471,6 +1638,18 @@
         } catch (err) { console.error('Failed to load scrape sources:', err); }
     }
 
+    // ---- Determine include value from existing source data ----------------
+    function getIncludeFromSource(src) {
+        if (src.crawl_mode === 'prefix') return 'path';
+        if (src.max_depth === 1) return 'just';
+        return 'linked';
+    }
+
+    function getScheduleLabel(schedule) {
+        if (!schedule) return 'Never';
+        return capitalize(schedule);
+    }
+
     /** Render source cards with status badges and action buttons. */
     function renderSourceCards() {
         const container = $('sourceCards');
@@ -1494,8 +1673,17 @@
             }
             const lastScraped = src.last_scraped_at ? `Last downloaded: ${formatRelativeTime(src.last_scraped_at)}` : 'Never downloaded';
             const busy = job && (job.status === 'running' || job.status === 'pending');
-            const isPrefix = src.crawl_mode === 'prefix';
-            const prefixes = isPrefix && src.allowed_prefixes ? JSON.parse(src.allowed_prefixes) : [];
+            const includeVal = getIncludeFromSource(src);
+            const includeLabel = includeVal === 'just' ? 'Page only'
+                : includeVal === 'path' ? 'Under ' + getUrlPath(src.url)
+                : 'Page + links';
+            const schedLabel = getScheduleLabel(src.schedule);
+
+            // Determine current include value for edit form
+            const editInclude = getIncludeFromSource(src);
+            const editUrlPath = getUrlPath(src.url);
+            const editHasPath = editUrlPath !== '';
+
             return `
                 <div class="source-card" data-source-id="${src.id}">
                     <div class="source-card-top">
@@ -1503,11 +1691,8 @@
                             <div class="source-card-url">${escapeHtml(src.url)}</div>
                             <div class="source-card-meta">
                                 <span class="source-badge category">${escapeHtml(src.category)}</span>
-                                ${isPrefix
-                                    ? ''
-                                    : `<span class="source-badge depth">Depth: ${src.max_depth}</span>`}
-                                ${isPrefix && prefixes.length ? `<span class="source-badge" style="background:#f0fdf4;color:#166534;">${prefixes.map(p => escapeHtml(p)).join(', ')}</span>` : ''}
-                                ${src.schedule ? `<span class="source-badge schedule">${escapeHtml(capitalize(src.schedule))}</span>` : ''}
+                                <span class="source-badge depth">${escapeHtml(includeLabel)}</span>
+                                <span class="source-badge schedule">${escapeHtml(schedLabel)}</span>
                                 ${statusBadge}
                                 <span>${escapeHtml(lastScraped)}</span>
                             </div>
@@ -1523,49 +1708,71 @@
                     <div class="edit-form-inline" id="editForm-${src.id}" style="display:none;">
                         <div class="form-row">
                             <div class="form-group full-width">
-                                <label>URL</label>
+                                <label>Website URL</label>
                                 <input type="url" id="editUrl-${src.id}" value="${escapeHtml(src.url)}">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group full-width">
+                                <label>What to include</label>
+                                <div class="include-radio-group" id="editIncludeGroup-${src.id}">
+                                    <label id="editIncludeJustLabel-${src.id}" class="${editInclude==='just'?'selected':''}">
+                                        <input type="radio" name="editInclude-${src.id}" value="just" ${editInclude==='just'?'checked':''}>
+                                        <span>Just this page</span>
+                                    </label>
+                                    <label id="editIncludeLinkedLabel-${src.id}" class="${editInclude==='linked'?'selected':''}">
+                                        <input type="radio" name="editInclude-${src.id}" value="linked" ${editInclude==='linked'?'checked':''}>
+                                        <span>This page + linked pages</span>
+                                    </label>
+                                    <label id="editIncludePathLabel-${src.id}" class="${editInclude==='path'?'selected':''} ${editHasPath?'':'disabled'}">
+                                        <input type="radio" name="editInclude-${src.id}" value="path" ${editInclude==='path'?'checked':''} ${editHasPath?'':'disabled'}>
+                                        <span>Everything under <span class="path-hint" id="editPathHint-${src.id}">${editHasPath ? escapeHtml(editUrlPath) : '/path/'}</span></span>
+                                    </label>
+                                </div>
                             </div>
                         </div>
                         <div class="form-row">
                             <div class="form-group">
                                 <label>Category <span class="required-star">*</span></label>
-                                <input type="text" id="editCategory-${src.id}" value="${escapeHtml(src.category)}">
-                            </div>
-                            <div class="form-group">
-                                <label>Crawl Mode <span class="required-star">*</span></label>
-                                <div class="crawl-mode-toggle">
-                                    <input type="radio" name="editCrawlMode-${src.id}" id="editCrawlModeDepth-${src.id}" value="depth" ${!isPrefix?'checked':''}>
-                                    <label for="editCrawlModeDepth-${src.id}">Depth-based</label>
-                                    <input type="radio" name="editCrawlMode-${src.id}" id="editCrawlModePrefix-${src.id}" value="prefix" ${isPrefix?'checked':''}>
-                                    <label for="editCrawlModePrefix-${src.id}">Prefix-based</label>
-                                </div>
-                            </div>
-                            <div class="form-group" id="editDepthGroup-${src.id}" style="${isPrefix?'display:none':''}">
-                                <label>Depth <span class="required-star">*</span></label>
-                                <select id="editDepth-${src.id}">
-                                    ${[1,2,3,4,5].map(d=>`<option value="${d}" ${src.max_depth===d?'selected':''}>${d}</option>`).join('')}
+                                <select id="editCategory-${src.id}">
+                                    <!-- populated by JS -->
                                 </select>
-                            </div>
-                            <div class="form-group" id="editPrefixGroup-${src.id}" style="${isPrefix?'':'display:none'}; min-width:220px;">
-                                <label>Allowed Prefixes <span class="required-star">*</span></label>
-                                <div class="prefix-tags-wrap" id="editPrefixTags-${src.id}">
-                                    <input type="text" class="prefix-tags-input" id="editPrefixInput-${src.id}" placeholder="e.g. /path/ then Enter">
-                                </div>
-                            </div>
-                            <div class="form-group" id="editMaxPagesGroup-${src.id}" style="${isPrefix?'':'display:none'}">
-                                <label>Max Pages</label>
-                                <input type="number" id="editMaxPages-${src.id}" value="${src.max_pages || 500}" min="1" max="10000">
+                                <input type="text" id="editCategoryNew-${src.id}" class="category-new-input" placeholder="New category name" style="display:none;">
                             </div>
                             <div class="form-group">
-                                <label>Schedule <span class="required-star">*</span></label>
+                                <label>Update</label>
                                 <select id="editSchedule-${src.id}">
-                                    <option value="" disabled ${!src.schedule?'selected':''}>Select schedule...</option>
-                                    <option value="manual" ${src.schedule==='manual'?'selected':''}>Manual only</option>
                                     <option value="daily" ${src.schedule==='daily'?'selected':''}>Daily</option>
                                     <option value="weekly" ${src.schedule==='weekly'?'selected':''}>Weekly</option>
                                     <option value="monthly" ${src.schedule==='monthly'?'selected':''}>Monthly</option>
+                                    <option value="manual" ${!src.schedule||src.schedule==='manual'?'selected':''}>Never</option>
                                 </select>
+                            </div>
+                        </div>
+                        <div style="margin-top: 6px; margin-bottom: 8px;">
+                            <button type="button" class="advanced-toggle-link" id="editAdvancedToggle-${src.id}">
+                                <span class="adv-chevron">&#9654;</span> Advanced options
+                                <span class="advanced-summary" id="editAdvancedSummary-${src.id}"></span>
+                            </button>
+                            <div class="advanced-body" id="editAdvancedBody-${src.id}">
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Crawl depth</label>
+                                        <select id="editDepth-${src.id}">
+                                            ${[1,2,3,4,5].map(d=>`<option value="${d}" ${src.max_depth===d?'selected':''}>${d} level${d>1?'s':''}</option>`).join('')}
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Max pages</label>
+                                        <input type="number" id="editMaxPages-${src.id}" value="${src.max_pages || 50}" min="1" max="500">
+                                    </div>
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group full-width">
+                                        <label>Exclude patterns</label>
+                                        <input type="text" id="editExclude-${src.id}" class="exclude-input" placeholder="/blog/*, /tags/*">
+                                    </div>
+                                </div>
                             </div>
                         </div>
                         <div class="form-actions">
@@ -1576,67 +1783,82 @@
                 </div>`;
         }).join('');
 
-        // Initialize edit form crawl-mode toggles and prefix tags for each source
+        // Initialize edit forms for each source card
         scrapeSources.forEach(src => {
-            const isPrefix = src.crawl_mode === 'prefix';
-            const prefixes = isPrefix && src.allowed_prefixes ? JSON.parse(src.allowed_prefixes) : [];
-
-            // Store prefixes in a data attribute for later access
             const card = document.querySelector(`.source-card[data-source-id="${src.id}"]`);
             if (!card) return;
-            card._editPrefixes = [...prefixes];
 
-            // Crawl mode toggle handlers
-            const depthRadio = $(`editCrawlModeDepth-${src.id}`);
-            const prefixRadio = $(`editCrawlModePrefix-${src.id}`);
-            const depthGroup = $(`editDepthGroup-${src.id}`);
-            const prefixGroup = $(`editPrefixGroup-${src.id}`);
-            const maxPagesGroup = $(`editMaxPagesGroup-${src.id}`);
-
-            if (depthRadio) {
-                depthRadio.addEventListener('change', () => applyCrawlModeVisibility('depth', depthGroup, prefixGroup, maxPagesGroup));
+            // Populate category dropdown
+            const catSelect = $(`editCategory-${src.id}`);
+            if (catSelect) {
+                populateCategoryDropdown(catSelect, src.category);
+                catSelect.addEventListener('change', () => {
+                    const newInput = $(`editCategoryNew-${src.id}`);
+                    if (catSelect.value === '__new__') {
+                        newInput.style.display = '';
+                        newInput.focus();
+                    } else {
+                        newInput.style.display = 'none';
+                        newInput.value = '';
+                    }
+                });
             }
-            if (prefixRadio) {
-                prefixRadio.addEventListener('change', () => {
-                    applyCrawlModeVisibility('prefix', depthGroup, prefixGroup, maxPagesGroup);
-                    // Auto-populate if empty
-                    if (card._editPrefixes.length === 0) {
-                        autoPopulatePrefix($(`editUrl-${src.id}`).value, card._editPrefixes, () => {
-                            _renderEditPrefixes(src.id, card);
+
+            // Include radio group handlers
+            const editIncludeGroup = $(`editIncludeGroup-${src.id}`);
+            if (editIncludeGroup) {
+                editIncludeGroup.querySelectorAll('input[type="radio"]').forEach(radio => {
+                    radio.addEventListener('change', () => {
+                        // Highlight selected
+                        editIncludeGroup.querySelectorAll('label').forEach(lbl => {
+                            const r = lbl.querySelector('input[type="radio"]');
+                            lbl.classList.toggle('selected', r && r.checked);
                         });
-                    }
+                        // Sync depth
+                        if (radio.value === 'just') {
+                            $(`editDepth-${src.id}`).value = '1';
+                        } else if (radio.value === 'linked') {
+                            $(`editDepth-${src.id}`).value = '2';
+                        }
+                    });
                 });
             }
 
-            // Render initial prefix tags
-            const tagsWrap = $(`editPrefixTags-${src.id}`);
-            const tagInput = $(`editPrefixInput-${src.id}`);
-            if (tagsWrap && tagInput) {
-                _renderEditPrefixes(src.id, card);
-
-                tagInput.addEventListener('keydown', (e) => {
-                    if (e.key === 'Enter' || e.key === ',') {
-                        e.preventDefault();
-                        addPrefix(tagInput, tagsWrap, card._editPrefixes, () => _renderEditPrefixes(src.id, card));
+            // URL change updates path option
+            const editUrl = $(`editUrl-${src.id}`);
+            if (editUrl) {
+                const updateEditPath = () => {
+                    const path = getUrlPath(editUrl.value.trim());
+                    const pathLabel = $(`editIncludePathLabel-${src.id}`);
+                    const pathInput = pathLabel ? pathLabel.querySelector('input[type="radio"]') : null;
+                    const pathHint = $(`editPathHint-${src.id}`);
+                    if (path) {
+                        pathLabel.classList.remove('disabled');
+                        if (pathInput) pathInput.disabled = false;
+                        if (pathHint) pathHint.textContent = path;
+                    } else {
+                        pathLabel.classList.add('disabled');
+                        if (pathInput) pathInput.disabled = true;
+                        if (pathHint) pathHint.textContent = '/path/';
+                        if (pathInput && pathInput.checked) {
+                            const linkedRadio = editIncludeGroup.querySelector('input[value="linked"]');
+                            if (linkedRadio) { linkedRadio.checked = true; linkedRadio.dispatchEvent(new Event('change')); }
+                        }
                     }
-                });
-                tagInput.addEventListener('blur', () => {
-                    if (tagInput.value.trim()) {
-                        addPrefix(tagInput, tagsWrap, card._editPrefixes, () => _renderEditPrefixes(src.id, card));
-                    }
-                });
-                tagsWrap.addEventListener('click', () => tagInput.focus());
+                };
+                editUrl.addEventListener('input', updateEditPath);
+                editUrl.addEventListener('change', updateEditPath);
             }
-        });
-    }
 
-    function _renderEditPrefixes(sourceId, card) {
-        const tagsWrap = $(`editPrefixTags-${sourceId}`);
-        const tagInput = $(`editPrefixInput-${sourceId}`);
-        if (!tagsWrap || !tagInput) return;
-        renderPrefixTags(tagsWrap, tagInput, card._editPrefixes, (idx) => {
-            card._editPrefixes.splice(idx, 1);
-            _renderEditPrefixes(sourceId, card);
+            // Advanced toggle
+            const advToggle = $(`editAdvancedToggle-${src.id}`);
+            const advBody = $(`editAdvancedBody-${src.id}`);
+            if (advToggle && advBody) {
+                advToggle.addEventListener('click', () => {
+                    const isOpen = advBody.classList.toggle('open');
+                    advToggle.classList.toggle('open', isOpen);
+                });
+            }
         });
     }
 
@@ -1673,34 +1895,22 @@
 
         if (saveBtn) {
             const id = saveBtn.dataset.sourceId;
-            const url      = $(`editUrl-${id}`).value.trim();
-            const category = $(`editCategory-${id}`).value.trim();
-            const maxDepth = parseInt($(`editDepth-${id}`).value);
-            const schedVal = $(`editSchedule-${id}`).value;
-            const schedule = schedVal === 'manual' ? null : (schedVal || null);
+            const url = $(`editUrl-${id}`).value.trim();
 
-            // Get crawl mode from the edit form radio buttons
-            const editModeRadio = document.querySelector(`input[name="editCrawlMode-${id}"]:checked`);
-            const crawlMode = editModeRadio ? editModeRadio.value : 'depth';
-            const card = document.querySelector(`.source-card[data-source-id="${id}"]`);
-            const editPrefixes = card ? card._editPrefixes : [];
-            const maxPages = parseInt($(`editMaxPages-${id}`).value) || 500;
+            // Get category (handle "Create new")
+            const catSelect = $(`editCategory-${id}`);
+            const catNewInput = $(`editCategoryNew-${id}`);
+            const category = catSelect.value === '__new__' ? catNewInput.value.trim() : catSelect.value;
+
+            const includeRadio = document.querySelector(`input[name="editInclude-${id}"]:checked`);
+            const includeVal = includeRadio ? includeRadio.value : 'linked';
+            const depth = $(`editDepth-${id}`).value;
+            const schedVal = $(`editSchedule-${id}`).value;
+            const maxPages = $(`editMaxPages-${id}`).value;
 
             if (!url || !category) { showError('URL and Category are required'); return; }
-            if (!schedVal)         { showError('Schedule is required'); return; }
-            if (crawlMode === 'prefix' && editPrefixes.length === 0) {
-                showError('At least one allowed prefix is required for prefix mode');
-                return;
-            }
 
-            const body = { url, category, crawl_mode: crawlMode, schedule };
-            if (crawlMode === 'depth') {
-                body.max_depth = maxDepth;
-            } else {
-                body.allowed_prefixes = [...editPrefixes];
-                body.max_pages = maxPages;
-                body.max_depth = 1;
-            }
+            const body = buildSourceBody(includeVal, url, category, depth, schedVal, maxPages);
 
             try {
                 const resp = await fetch(`${API_BASE}/scrape-sources/${id}`, {

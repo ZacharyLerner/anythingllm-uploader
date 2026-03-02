@@ -681,7 +681,7 @@
                             </label>
                             <label id="includePathLabel" class="disabled">
                                 <input type="radio" name="sourceInclude" id="includePath" value="path" disabled>
-                                <span>Everything under <span class="path-hint" id="pathHint">/path/</span></span>
+                                <span>All pages under:  <span class="path-hint" id="pathHint">/path/</span></span>
                             </label>
                         </div>
                     </div>
@@ -720,6 +720,8 @@
                             <div class="form-group">
                                 <label for="sourceDepth">Crawl depth</label>
                                 <select id="sourceDepth">
+                                    <option value="1" style="display:none;">1 level</option>
+                                    <option value="2" selected>2 levels</option>
                                     <option value="3">3 levels</option>
                                     <option value="4">4 levels</option>
                                     <option value="5">5 levels</option>
@@ -1436,7 +1438,7 @@
         const depthVal = parseInt(depthSelect.value) || 2;
         if (sel.value === 'just') {
             depthSelect.value = '1';
-            depthSelect.disabled = false;
+            depthSelect.disabled = true;
         } else if (sel.value === 'linked') {
             // Only reset depth if it was at 1 (from "just this page"); preserve manual 3+ selections
             if (depthVal <= 1) depthSelect.value = '2';
@@ -1468,6 +1470,7 @@
                 }
             });
         }
+        updateAdvancedSummary();
     }
 
     // Wire up radio group
@@ -1811,7 +1814,8 @@
                                     <div class="form-group">
                                         <label>Crawl depth</label>
                                         <select id="editDepth-${src.id}">
-                                            ${[3,4,5].map(d=>`<option value="${d}" ${src.max_depth===d?'selected':''}>${d} level${d>1?'s':''}</option>`).join('')}
+                                            <option value="1" style="display:none;" ${src.max_depth===1?'selected':''}>1 level</option>
+                                            ${[2,3,4,5].map(d=>`<option value="${d}" ${src.max_depth===d?'selected':''}>${d} levels</option>`).join('')}
                                         </select>
                                     </div>
                                     <div class="form-group">
@@ -1904,7 +1908,7 @@
                 const depthVal = parseInt(editDepthSelect.value) || 2;
                 if (sel.value === 'just') {
                     editDepthSelect.value = '1';
-                    editDepthSelect.disabled = false;
+                    editDepthSelect.disabled = true;
                 } else if (sel.value === 'linked') {
                     if (depthVal <= 1) editDepthSelect.value = '2';
                     editDepthSelect.disabled = false;

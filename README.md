@@ -11,7 +11,7 @@ The project has **two processes** that share a single SQLite database:
 | Process | Purpose |
 |---------|---------|
 | `app.py` | Flask web server (port 3000). Serves the UI, handles file uploads with optional Docling conversion, and provides REST endpoints for document and scrape-source management. |
-| `scraper.py` | Long-running background worker. Polls for pending scrape jobs, performs breadth-first web crawls, extracts content with trafilatura, and uploads pages to AnythingLLM. APScheduler handles recurring schedules. |
+| `scraper.py` | Long-running background worker. Polls for pending scrape jobs, performs breadth-first web crawls, extracts readable content with BeautifulSoup and converts it to Markdown via markdownify, and uploads each page to AnythingLLM. APScheduler handles recurring schedules. |
 
 ### Module layout
 
@@ -22,7 +22,6 @@ The project has **two processes** that share a single SQLite database:
 ├── config.py           # Shared configuration (env vars, constants)
 ├── db.py               # Shared database connection & schema
 ├── anythingllm.py      # Shared AnythingLLM API helper functions
-├── migrate.py          # One-time DB migration script (v1 -> v2)
 ├── templates/
 │   ├── index.html      # Main single-page UI
 │   └── 404.html        # Workspace-not-found page
@@ -62,6 +61,7 @@ cp .env.example .env
 | `AnythingLLM_API_URL` | Base URL of the AnythingLLM API, e.g. `http://localhost:3001/api/v1` |
 | `AnythingLLM_API_Key` | Bearer token for API authentication |
 | `APP_API_KEY` | Optional. When set, external API callers must include this as a `Bearer` token. Leave empty to disable. |
+| `DEBUG_UPLOAD_DIR` | Optional. Directory path to save copies of all files before sending to AnythingLLM. Useful for debugging. Leave empty to disable. |
 
 ### 4. Run the web server
 

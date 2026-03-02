@@ -334,7 +334,7 @@ def _extract_content(html: str, url: str) -> Tuple[Optional[str], Optional[str]]
     plain_text = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", main_markdown)  # links
     plain_text = re.sub(r"[#*_`\-\|>\[\]]", "", plain_text)  # formatting chars
     plain_text = plain_text.strip()
-    if len(plain_text) < 50:
+    if len(plain_text) < 20:
         log.warning(
             "Extracted content too short for %s (%d chars)", url, len(plain_text)
         )

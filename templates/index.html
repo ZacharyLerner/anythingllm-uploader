@@ -720,7 +720,6 @@
                             <div class="form-group">
                                 <label for="sourceDepth">Crawl depth</label>
                                 <select id="sourceDepth">
-                                    <option value="1">1 level</option>
                                     <option value="2" selected>2 levels</option>
                                     <option value="3">3 levels</option>
                                     <option value="4">4 levels</option>
@@ -1813,7 +1812,7 @@
                                     <div class="form-group">
                                         <label>Crawl depth</label>
                                         <select id="editDepth-${src.id}">
-                                            ${[1,2,3,4,5].map(d=>`<option value="${d}" ${src.max_depth===d?'selected':''}>${d} level${d>1?'s':''}</option>`).join('')}
+                                            ${[2,3,4,5].map(d=>`<option value="${d}" ${src.max_depth===d?'selected':''}>${d} level${d>1?'s':''}</option>`).join('')}
                                         </select>
                                     </div>
                                     <div class="form-group">

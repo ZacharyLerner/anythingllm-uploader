@@ -438,6 +438,14 @@ def upload(workspace):
             yield _stream_json({"step": "embedding"})
             ok, embed_err = embed_document(workspace, location)
             if not ok:
+                # FIX Leak 1: Clean up the orphaned file from AnythingLLM storage
+                # so it doesn't persist with no local DB reference.
+                _cleanup_ok, _cleanup_err = remove_document(workspace, location)
+                if not _cleanup_ok:
+                    log.warning(
+                        "Failed to clean up uploaded file after embed failure: %s",
+                        _cleanup_err,
+                    )
                 yield _stream_json(
                     {
                         "step": "error",
@@ -543,6 +551,14 @@ def api_upload(workspace):
 
     ok, embed_err = embed_document(workspace, location)
     if not ok:
+        # FIX Leak 1: Clean up the orphaned file from AnythingLLM storage
+        # so it doesn't persist with no local DB reference.
+        _cleanup_ok, _cleanup_err = remove_document(workspace, location)
+        if not _cleanup_ok:
+            log.warning(
+                "Failed to clean up uploaded file after embed failure: %s",
+                _cleanup_err,
+            )
         return jsonify({"error": _safe_error(embed_err or "Embedding failed")}), 502
 
     # --- Record in local DB ---
@@ -838,7 +854,13 @@ def update_scrape_source(workspace, source_id):
 
 @app.route("/<workspace>/scrape-sources/<int:source_id>", methods=["DELETE"])
 def delete_scrape_source(workspace, source_id):
-    """Delete a scrape source *and* all its scraped documents."""
+    """Delete a scrape source *and* all its scraped documents.
+
+    If some documents cannot be removed from AnythingLLM, their local DB
+    rows are retained so they can be retried later.  The scrape source
+    itself is only deleted when *all* associated documents have been
+    successfully cleaned up.  Returns HTTP 207 on partial success.
+    """
     with open_db() as db:
         existing = db.execute(
             "SELECT * FROM scrape_sources WHERE id = ? AND workspace = ?",
@@ -853,21 +875,48 @@ def delete_scrape_source(workspace, source_id):
             (source_id,),
         ).fetchall()
 
+        # FIX Leak 3: Track which removals fail so we only delete DB rows
+        # for documents that were actually cleaned up in AnythingLLM.
+        failed_locations = set()
         for doc in docs:
             ok, err = remove_document(workspace, doc["location"])
             if not ok:
                 log.warning("Failed to remove scraped doc from AnythingLLM: %s", err)
+                failed_locations.add(doc["location"])
 
         with db:
-            db.execute(
-                "DELETE FROM documents WHERE source_id = ? AND source_type = 'scrape'",
-                (source_id,),
-            )
+            if failed_locations:
+                # Only delete docs that were successfully removed remotely.
+                placeholders = ",".join("?" for _ in failed_locations)
+                db.execute(
+                    f"DELETE FROM documents WHERE source_id = ? "
+                    f"AND source_type = 'scrape' "
+                    f"AND location NOT IN ({placeholders})",
+                    (source_id, *failed_locations),
+                )
+            else:
+                db.execute(
+                    "DELETE FROM documents WHERE source_id = ? AND source_type = 'scrape'",
+                    (source_id,),
+                )
+
             db.execute("DELETE FROM scrape_jobs WHERE source_id = ?", (source_id,))
-            db.execute(
-                "DELETE FROM scrape_sources WHERE id = ? AND workspace = ?",
-                (source_id, workspace),
-            )
+
+            # Only delete the source itself if ALL docs were cleaned up.
+            if not failed_locations:
+                db.execute(
+                    "DELETE FROM scrape_sources WHERE id = ? AND workspace = ?",
+                    (source_id, workspace),
+                )
+
+    if failed_locations:
+        return jsonify({
+            "message": "Source partially deleted",
+            "warning": (
+                f"{len(failed_locations)} document(s) could not be removed "
+                f"from AnythingLLM and were retained for retry"
+            ),
+        }), 207
 
     return jsonify({"message": "Source and its documents deleted"})
 

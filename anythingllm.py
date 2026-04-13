@@ -24,7 +24,6 @@ def workspace_exists(workspace: str) -> bool:
 
 # Uploads and embeds a document into a workspace
 def upload_document(uploaded_file, file_name, workspace: str):
-    start_time = time.time()
     response = requests.post(
         f"{API_URL}/document/upload",
         headers=HEADERS,
@@ -32,8 +31,6 @@ def upload_document(uploaded_file, file_name, workspace: str):
         data={"addToWorkspaces": workspace},
     )
     end_time = time.time()
-    print(f"Upload response time: {end_time - start_time} seconds")
-    print(f"Upload code: {response.status_code}")
     data = response.json()
     return data["documents"][0]["location"]
 

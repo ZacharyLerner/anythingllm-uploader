@@ -19,7 +19,7 @@ from anythingllm import (
     generate_new_workspace,
     delete_workspace,
 )
-from config import TEXT_EXTENSIONS, DEBUG_UPLOAD_DIR
+from config import TEXT_EXTENSIONS, DEBUG_UPLOAD_DIR, MAX_UPLOAD_BYTES
 from database import Base, engine, get_db
 from decling_conversion import convert_file, scrape_website_md
 from models import Workspace, File as FileModel
@@ -67,54 +67,86 @@ async def home(request: Request, workspace_id: str, db: Session = Depends(get_db
             "files": files,
             "workspace": workspace,
             "extensions": extensions,
+            "max_upload_bytes": MAX_UPLOAD_BYTES,
         },
     )
 
 # Processes a file into MD and uploads to anythingLLM
 async def processes_file(content, fname, workspace_id, queue):
     async with SEM:
-        await queue.put({"file": fname, "status": "uploaded"})
-        file_extension = Path(fname).suffix
-        original_ext = file_extension.lower()
-        file_name = fname
+        try:
+            await queue.put({"file": fname, "status": "uploaded"})
+            file_extension = Path(fname).suffix
+            original_ext = file_extension.lower()
+            file_name = fname
 
-        if file_extension not in TEXT_EXTENSIONS:
-            await queue.put({"file": fname, "status": "converted"})
-            md_result = await asyncio.to_thread(convert_file, content, fname)
-            LLM_File = io.StringIO(md_result)
-            LLM_File.name = Path(fname).with_suffix(".md").name
-        else:
-            LLM_File = io.StringIO(content.decode("utf-8"))
-            LLM_File.name = fname
+            if file_extension not in TEXT_EXTENSIONS:
+                await queue.put({"file": fname, "status": "converted"})
+                md_result = await asyncio.to_thread(convert_file, content, fname)
+                LLM_File = io.StringIO(md_result)
+                LLM_File.name = Path(fname).with_suffix(".md").name
+            else:
+                LLM_File = io.StringIO(content.decode("utf-8"))
+                LLM_File.name = fname
 
-        if DEBUG_UPLOAD_DIR:
-            debug_path = Path(DEBUG_UPLOAD_DIR) / LLM_File.name
-            debug_path.parent.mkdir(parents=True, exist_ok=True)
-            await asyncio.to_thread(debug_path.write_text, LLM_File.getvalue())
+            if DEBUG_UPLOAD_DIR:
+                debug_path = Path(DEBUG_UPLOAD_DIR) / LLM_File.name
+                debug_path.parent.mkdir(parents=True, exist_ok=True)
+                await asyncio.to_thread(debug_path.write_text, LLM_File.getvalue())
 
-        await queue.put({"file": fname, "status": "embedded"})
-        file_location = await asyncio.to_thread(
-            upload_document, LLM_File, LLM_File.name, workspace_id
-        )
+            await queue.put({"file": fname, "status": "embedded"})
+            file_location = await asyncio.to_thread(
+                upload_document, LLM_File, LLM_File.name, workspace_id
+            )
 
-        await queue.put(
-            {
-                "file": fname,
-                "status": "done",
-                "location": file_location,
-                "name": file_name,
-                "original_extension": original_ext,
-            }
-        )
+            await queue.put(
+                {
+                    "file": fname,
+                    "status": "done",
+                    "location": file_location,
+                    "name": file_name,
+                    "original_extension": original_ext,
+                }
+            )
+        except Exception as e:
+            print(f"Error processing file {fname}: {e}")
+            await queue.put(
+                {
+                    "file": fname,
+                    "status": "error",
+                    "message": f"Processing failed: {str(e)}",
+                }
+            )
 
 # Streams the progress on uploads as they pass
 async def _stream_upload_progress(file_data, workspace_id, db):
     queue = asyncio.Queue()
     completed_files = []
+    valid_files = []
+    rejected_events = []
+
+    # Check file sizes before processing
+    for content, filename in file_data:
+        if len(content) > MAX_UPLOAD_BYTES:
+            size_mb = len(content) / (1024 * 1024)
+            limit_mb = MAX_UPLOAD_BYTES / (1024 * 1024)
+            rejected_events.append(
+                {
+                    "file": filename,
+                    "status": "error",
+                    "message": f"File is {size_mb:.1f} MB — exceeds {limit_mb:.0f} MB limit",
+                }
+            )
+        else:
+            valid_files.append((content, filename))
+
+    # Yield rejection events immediately
+    for event in rejected_events:
+        yield f"data: {json.dumps(event)}\n\n"
 
     async def run_all():
         coroutines = []
-        for content, filename in file_data:
+        for content, filename in valid_files:
             coroutines.append(processes_file(content, filename, workspace_id, queue))
         await asyncio.gather(*coroutines, return_exceptions=True)
         await queue.put(None)
@@ -249,6 +281,15 @@ async def upload_to_workspace(
     saved_files = []
     for f in uploaded_files:
         content = await f.read()
+
+        if len(content) > MAX_UPLOAD_BYTES:
+            size_mb = len(content) / (1024 * 1024)
+            limit_mb = MAX_UPLOAD_BYTES / (1024 * 1024)
+            raise HTTPException(
+                status_code=413,
+                detail=f"File '{f.filename}' is {size_mb:.1f} MB — exceeds {limit_mb:.0f} MB limit",
+            )
+
         file_extension = Path(f.filename).suffix
         file_name = f.filename
 

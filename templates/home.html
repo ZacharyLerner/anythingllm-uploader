@@ -26,7 +26,8 @@
 
         <!-- ========== File Drop Zone ========== -->
         <div class="upload-area" id="dropZone"
-             data-url="{{ url_for('create_upload_files', workspace_id=workspace.id) }}">
+             data-url="{{ url_for('create_upload_files', workspace_id=workspace.id) }}"
+             data-max-bytes="{{ max_upload_bytes }}">
             <p>Drop files here or click to upload documents</p>
             <p class="hint">Supported: PDF, DOCX, PPTX, HTML, Markdown, and more</p>
             <input type="file" id="fileInput" multiple>

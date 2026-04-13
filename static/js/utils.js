@@ -5,8 +5,16 @@ const fileInput = document.getElementById("fileInput");
 const uploadCounter = document.getElementById("uploadCounter");
 const fileDisplay = document.querySelector(".file_display");
 const uploadUrl = dropZone.dataset.url;
+const MAX_UPLOAD_BYTES = parseInt(dropZone.dataset.maxBytes, 10) || Infinity;
 
 let isUploading = false;
+
+// Format bytes into a human-readable string
+function formatBytes(bytes) {
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+    return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+}
 
 // Warn before closing/navigating away during an active upload
 window.addEventListener("beforeunload", (e) => {
@@ -49,6 +57,7 @@ async function uploadFiles(files) {
     const formData = new FormData();
     const totalFiles = files.length;
     let completedCount = 0;
+    let failedCount = 0;
 
     const rows = {};
     const steps = { uploaded: 25, converted: 50, embedded: 75, done: 100 };
@@ -68,15 +77,31 @@ async function uploadFiles(files) {
 
     // Update the header counter
     function updateCounter() {
-        uploadCounter.textContent = `Uploading ${totalFiles} file${totalFiles > 1 ? "s" : ""} \u2014 ${completedCount}/${totalFiles} complete`;
+        let text = `Uploading ${totalFiles} file${totalFiles > 1 ? "s" : ""} \u2014 ${completedCount}/${totalFiles} complete`;
+        if (failedCount > 0) {
+            text += ` (${failedCount} failed)`;
+        }
+        uploadCounter.textContent = text;
     }
 
     updateCounter();
 
+    // Mark a row as failed with an error message
+    function markRowError(row, message) {
+        row.classList.remove("uploading");
+        row.classList.add("upload-error");
+        row.querySelector(".file-info .date").textContent = message || "Upload failed";
+        const indicator = row.querySelector(".upload-indicator");
+        if (indicator) indicator.remove();
+        failedCount++;
+        updateCounter();
+    }
+
+    // Track which files pass client-side validation
+    let validCount = 0;
+
     // Insert in-progress rows at the top of the file list
     for (const file of files) {
-        formData.append("uploaded_files", file);
-
         const row = document.createElement("div");
         row.className = "file_card uploading";
         row.innerHTML = `
@@ -95,10 +120,28 @@ async function uploadFiles(files) {
         // Prepend to top of file list
         fileDisplay.prepend(row);
         rows[file.name] = row;
+
+        // Client-side file size check
+        if (file.size > MAX_UPLOAD_BYTES) {
+            const limitStr = formatBytes(MAX_UPLOAD_BYTES);
+            const sizeStr = formatBytes(file.size);
+            markRowError(row, `File is ${sizeStr} \u2014 exceeds ${limitStr} limit`);
+        } else {
+            formData.append("uploaded_files", file);
+            validCount++;
+        }
     }
 
     // Scroll the section body to the top so the user sees the new rows
     fileDisplay.closest(".section-body").scrollTop = 0;
+
+    // If all files were rejected client-side, stop here
+    if (validCount === 0) {
+        uploadCounter.textContent = `${failedCount} file${failedCount > 1 ? "s" : ""} rejected (too large)`;
+        setTimeout(() => { uploadCounter.textContent = ""; }, 4000);
+        isUploading = false;
+        return;
+    }
 
     const res = await fetch(uploadUrl, {
         method: "POST",
@@ -106,11 +149,11 @@ async function uploadFiles(files) {
     });
 
     if (!res.ok) {
-        for (const row of Object.values(rows)) {
-            row.classList.remove("uploading");
-            row.classList.add("upload-error");
-            row.querySelector(".file-info .date").textContent = "Upload failed";
-            row.querySelector(".upload-indicator").remove();
+        // Mark only the rows that were actually sent (not already rejected)
+        for (const [name, row] of Object.entries(rows)) {
+            if (!row.classList.contains("upload-error")) {
+                markRowError(row, "Upload failed");
+            }
         }
         uploadCounter.textContent = "Upload failed";
         setTimeout(() => { uploadCounter.textContent = ""; }, 3000);
@@ -136,9 +179,13 @@ async function uploadFiles(files) {
             if (!payload) continue;
 
             if (payload === "[DONE]") {
-                // All files processed — clear the counter after a brief moment
-                uploadCounter.textContent = `${totalFiles} file${totalFiles > 1 ? "s" : ""} uploaded`;
-                setTimeout(() => { uploadCounter.textContent = ""; }, 2500);
+                // All files processed — show final summary
+                let summary = `${completedCount} file${completedCount !== 1 ? "s" : ""} uploaded`;
+                if (failedCount > 0) {
+                    summary += `, ${failedCount} failed`;
+                }
+                uploadCounter.textContent = summary;
+                setTimeout(() => { uploadCounter.textContent = ""; }, 3000);
                 rebuildCheckboxes();
                 refreshFilterBar();
                 isUploading = false;
@@ -150,7 +197,10 @@ async function uploadFiles(files) {
                 const row = rows[event.file];
                 if (!row) continue;
 
-                if (event.status === "done") {
+                if (event.status === "error") {
+                    // Per-file error from the backend
+                    markRowError(row, event.message || "Processing failed");
+                } else if (event.status === "done") {
                     // Transform the uploading row into a completed file card
                     completedCount++;
                     updateCounter();

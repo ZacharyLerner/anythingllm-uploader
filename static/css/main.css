@@ -457,6 +457,8 @@ body {
 .file_card.upload-error .file-info .date {
     color: var(--error);
     font-weight: 500;
+    white-space: normal;
+    line-height: 1.3;
 }
 
 .upload-indicator {

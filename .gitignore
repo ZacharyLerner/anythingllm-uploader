@@ -1,0 +1,7 @@
+*.db
+.env
+
+/debug_uploads
+.vscode
+.ruff_cache
+__pycache__

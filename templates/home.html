@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', path='css/main.css') }}?v=2">
+    <title>{{ workspace.name }} - Documents</title>
+</head>
+<body>
+    <div class="container">
+
+        <!-- ========== Page Header ========== -->
+        <div class="page-header">
+            <div class="page-header-left">
+                <h1>{{ workspace.name }}</h1>
+                <p class="subtitle">Workspace {{ workspace.id }}</p>
+            </div>
+            <button class="btn-settings" id="settingsBtn" title="Adjust Settings">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+                    <circle cx="12" cy="12" r="3"/>
+                </svg>
+                Settings
+            </button>
+        </div>
+
+        <!-- ========== File Drop Zone ========== -->
+        <div class="upload-area" id="dropZone"
+             data-url="{{ url_for('create_upload_files', workspace_id=workspace.id) }}">
+            <p>Drop files here or click to upload documents</p>
+            <p class="hint">Supported: PDF, DOCX, PPTX, HTML, Markdown, and more</p>
+            <input type="file" id="fileInput" multiple>
+        </div>
+
+        <!-- ========== Extension Filter Bar ========== -->
+        <div class="filter-bar" id="filterBar">
+            <button class="filter-pill active" data-ext="all">All</button>
+            {% for ext in extensions %}
+            <button class="filter-pill" data-ext="{{ ext }}">{{ ext.replace('.', '').upper() }}</button>
+            {% endfor %}
+        </div>
+
+        <!-- ========== Uploaded Files Section ========== -->
+        <div class="section uploaded-files-section">
+            <div class="section-header">
+                <div class="section-header-left">
+                    <label class="select-all-wrap" title="Select all">
+                        <input type="checkbox" id="selectAllCb">
+                    </label>
+                    <h2>Uploaded Files</h2>
+                    <span class="upload-counter" id="uploadCounter"></span>
+                </div>
+                <div class="section-header-right">
+                    <select class="sort-select" id="sortSelect">
+                        <option value="newest">Newest First</option>
+                        <option value="oldest">Oldest First</option>
+                        <option value="az">Alphabetical A-Z</option>
+                        <option value="za">Alphabetical Z-A</option>
+                        <option value="ext">By Extension</option>
+                    </select>
+                </div>
+            </div>
+            <!-- ========== Bulk Actions Bar ========== -->
+            <div class="bulk-actions" id="bulkActions">
+                <span><strong id="selectedCount">0</strong> selected</span>
+                <button class="btn-delete-bulk" id="bulkDeleteBtn">Delete Selected</button>
+            </div>
+            <div class="section-body">
+                <div class="file_display">
+                {% for file in files %}
+                    {% set ext = file.original_extension or '' %}
+                    <div class="file_card"
+                         data-index="{{ loop.index0 }}"
+                         data-extension="{{ ext }}"
+                         data-filename="{{ file.filename }}"
+                         data-date="{{ file.uploaded_at.isoformat() if file.uploaded_at else '' }}">
+                        <input type="checkbox" class="file-checkbox" data-id="{{ file.id }}">
+                        <span class="ext-badge ext-{{ ext.replace('.', '') }}">{{ ext.replace('.', '').upper() or '?' }}</span>
+                        <div class="file-info">
+                            <div class="filename">{{ file.filename }}</div>
+                            <div class="date">{{ file.uploaded_at }}</div>
+                        </div>
+                        <button class="btn-delete" data-id="{{ file.id }}">Delete</button>
+                    </div>
+                {% endfor %}
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- ========== Bulk Delete Overlay ========== -->
+    <div class="delete-overlay" id="deleteOverlay">
+        <div class="delete-overlay-content">
+            <div class="delete-spinner"></div>
+            <h3 id="deleteOverlayTitle">Deleting files...</h3>
+            <p id="deleteOverlayMsg">This may take a moment for larger selections.</p>
+        </div>
+    </div>
+
+    <!-- ========== Settings Slide-Out Panel ========== -->
+    <div class="settings-overlay" id="settingsOverlay"></div>
+    <div class="settings-panel" id="settingsPanel" data-workspace="{{ workspace.id }}">
+        <div class="settings-panel-header">
+            <h2>Workspace Settings</h2>
+            <button class="settings-close" id="settingsClose">&times;</button>
+        </div>
+        <div class="settings-panel-body">
+            <div class="setting-group">
+                <label for="settingPrompt">System Prompt</label>
+                <textarea id="settingPrompt" rows="5" placeholder="Enter a system prompt for this workspace..."></textarea>
+            </div>
+            <div class="setting-group">
+                <label for="settingTopN">Top N Results</label>
+                <div class="setting-range-row">
+                    <input type="range" id="settingTopN" min="1" max="10" value="4" step="1">
+                    <input type="number" class="range-value-input" id="topNValue" min="1" max="10" step="1" value="4">
+                </div>
+                <p class="setting-hint">Number of document chunks to retrieve per query.</p>
+            </div>
+            <div class="setting-group">
+                <label for="settingTemp">Temperature</label>
+                <div class="setting-range-row">
+                    <input type="range" id="settingTemp" min="0" max="1" value="0.7" step="0.1">
+                    <input type="number" class="range-value-input" id="tempValue" min="0" max="1" step="0.1" value="0.7">
+                </div>
+                <p class="setting-hint">Higher values make output more creative, lower values more deterministic.</p>
+            </div>
+            <div class="setting-group">
+                <label for="settingSimilarity">Similarity Threshold</label>
+                <select class="setting-select" id="settingSimilarity">
+                    <option value="0">No restriction</option>
+                    <option value="0.25" selected>Low (similarity score &ge; .25)</option>
+                    <option value="0.5">Medium (similarity score &ge; .50)</option>
+                    <option value="0.75">High (similarity score &ge; .75)</option>
+                </select>
+                <p class="setting-hint">Minimum relevance score for retrieved chunks.</p>
+            </div>
+        </div>
+        <div class="settings-panel-footer">
+            <button class="btn-settings-save" id="settingsSaveBtn">Save Settings</button>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', path='js/utils.js') }}?v=2"></script>
+</body>
+</html>

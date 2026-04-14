@@ -1,0 +1,9 @@
+beautifulsoup4
+docling
+fastapi
+jinja2
+pydantic
+python-dotenv
+requests
+sqlalchemy
+uvicorn

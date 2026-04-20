@@ -796,12 +796,16 @@ function updateFormVisibility() {
 /* ---------- Category dropdown ---------- */
 
 const categoryDropdown = document.getElementById("scrapeCategoryDropdown");
-const existingCategories = (scrapeCategoryInput.dataset.categories || "")
-    .split(",").map(s => s.trim()).filter(Boolean);
+function getLiveCategories() {
+    const fromCards = Array.from(
+        scrapeFileDisplay.querySelectorAll(".file_card[data-category]")
+    ).map(c => c.dataset.category).filter(Boolean);
+    return [...new Set(fromCards)].sort();
+}
 
 function renderCategoryDropdown(filter) {
     const q = filter.toLowerCase();
-    const matches = existingCategories.filter(c => c.toLowerCase().includes(q));
+    const matches = getLiveCategories().filter(c => c.toLowerCase().includes(q));
     if (matches.length === 0) {
         categoryDropdown.classList.remove("open");
         return;

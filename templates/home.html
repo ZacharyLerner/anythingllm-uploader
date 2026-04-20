@@ -3,87 +3,295 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" type="text/css" href="{{ url_for('static', path='css/main.css') }}?v=2">
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', path='css/main.css') }}?v=4">
     <title>{{ workspace.name }} - Documents</title>
 </head>
 <body>
     <div class="container">
 
         <!-- ========== Page Header ========== -->
-        <div class="page-header">
-            <div class="page-header-left">
-                <h1>{{ workspace.name }}</h1>
-                <p class="subtitle">Workspace {{ workspace.id }}</p>
+        <div class="workflow-panel workflow-header">
+            <div class="page-header">
+                <div class="page-header-left">
+                    <h1>{{ workspace.name }}</h1>
+                    <p class="subtitle">Workspace {{ workspace.id }}</p>
+                </div>
+                <button class="btn-settings" id="settingsBtn" title="Adjust Settings">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+                        <circle cx="12" cy="12" r="3"/>
+                    </svg>
+                    Settings
+                </button>
             </div>
-            <button class="btn-settings" id="settingsBtn" title="Adjust Settings">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
-                    <circle cx="12" cy="12" r="3"/>
+        </div>
+
+        <!-- ================================================================
+             SECTION 1: Upload Documents
+             ================================================================ -->
+        <div class="workflow-panel workflow-upload">
+            <div class="workflow-label">
+                <h2 class="workflow-title">Upload Documents</h2>
+                <p class="workflow-desc">Add files from your computer to this workspace</p>
+            </div>
+
+            <!-- ========== File Drop Zone ========== -->
+            <div class="upload-area" id="dropZone"
+                 data-url="{{ url_for('create_upload_files', workspace_id=workspace.id) }}"
+                 data-max-bytes="{{ max_upload_bytes }}">
+                <svg class="upload-icon" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                    <polyline points="17 8 12 3 7 8"/>
+                    <line x1="12" y1="3" x2="12" y2="15"/>
                 </svg>
-                Settings
-            </button>
-        </div>
-
-        <!-- ========== File Drop Zone ========== -->
-        <div class="upload-area" id="dropZone"
-             data-url="{{ url_for('create_upload_files', workspace_id=workspace.id) }}"
-             data-max-bytes="{{ max_upload_bytes }}">
-            <p>Drop files here or click to upload documents</p>
-            <p class="hint">Supported: PDF, DOCX, PPTX, HTML, Markdown, and more</p>
-            <input type="file" id="fileInput" multiple>
-        </div>
-
-        <!-- ========== Extension Filter Bar ========== -->
-        <div class="filter-bar" id="filterBar">
-            <button class="filter-pill active" data-ext="all">All</button>
-            {% for ext in extensions %}
-            <button class="filter-pill" data-ext="{{ ext }}">{{ ext.replace('.', '').upper() }}</button>
-            {% endfor %}
-        </div>
-
-        <!-- ========== Uploaded Files Section ========== -->
-        <div class="section uploaded-files-section">
-            <div class="section-header">
-                <div class="section-header-left">
-                    <label class="select-all-wrap" title="Select all">
-                        <input type="checkbox" id="selectAllCb">
-                    </label>
-                    <h2>Uploaded Files</h2>
-                    <span class="upload-counter" id="uploadCounter"></span>
-                </div>
-                <div class="section-header-right">
-                    <select class="sort-select" id="sortSelect">
-                        <option value="newest">Newest First</option>
-                        <option value="oldest">Oldest First</option>
-                        <option value="az">Alphabetical A-Z</option>
-                        <option value="za">Alphabetical Z-A</option>
-                        <option value="ext">By Extension</option>
-                    </select>
-                </div>
+                <p>Drop files here or click to upload</p>
+                <p class="hint">PDF, DOCX, PPTX, HTML, Markdown, and more</p>
+                <input type="file" id="fileInput" multiple>
             </div>
-            <!-- ========== Bulk Actions Bar ========== -->
-            <div class="bulk-actions" id="bulkActions">
-                <span><strong id="selectedCount">0</strong> selected</span>
-                <button class="btn-delete-bulk" id="bulkDeleteBtn">Delete Selected</button>
-            </div>
-            <div class="section-body">
-                <div class="file_display">
-                {% for file in files %}
-                    {% set ext = file.original_extension or '' %}
-                    <div class="file_card"
-                         data-index="{{ loop.index0 }}"
-                         data-extension="{{ ext }}"
-                         data-filename="{{ file.filename }}"
-                         data-date="{{ file.uploaded_at.isoformat() if file.uploaded_at else '' }}">
-                        <input type="checkbox" class="file-checkbox" data-id="{{ file.id }}">
-                        <span class="ext-badge ext-{{ ext.replace('.', '') }}">{{ ext.replace('.', '').upper() or '?' }}</span>
-                        <div class="file-info">
-                            <div class="filename">{{ file.filename }}</div>
-                            <div class="date">{{ file.uploaded_at }}</div>
-                        </div>
-                        <button class="btn-delete" data-id="{{ file.id }}">Delete</button>
-                    </div>
+
+            <!-- ========== Extension Filter Bar (inside panel) ========== -->
+            <div class="filter-bar" id="filterBar">
+                <button class="filter-pill active" data-ext="all">All</button>
+                {% for ext in extensions %}
+                <button class="filter-pill" data-ext="{{ ext }}">{{ ext.replace('.', '').upper() }}</button>
                 {% endfor %}
+            </div>
+
+            <!-- ========== Uploaded Files Section ========== -->
+            <div class="section uploaded-files-section">
+                <div class="section-header">
+                    <div class="section-header-left">
+                        <label class="select-all-wrap" title="Select all">
+                            <input type="checkbox" id="selectAllCb">
+                        </label>
+                        <h2>Uploaded Files</h2>
+                        <span class="upload-counter" id="uploadCounter"></span>
+                    </div>
+                    <div class="section-header-right">
+                        <select class="sort-select" id="sortSelect">
+                            <option value="newest">Newest First</option>
+                            <option value="oldest">Oldest First</option>
+                            <option value="az">Alphabetical A-Z</option>
+                            <option value="za">Alphabetical Z-A</option>
+                            <option value="ext">By Extension</option>
+                        </select>
+                    </div>
+                </div>
+                <!-- ========== Bulk Actions Bar ========== -->
+                <div class="bulk-actions" id="bulkActions">
+                    <span><strong id="selectedCount">0</strong> selected</span>
+                    <button class="btn-delete-bulk" id="bulkDeleteBtn">Delete Selected</button>
+                </div>
+                <div class="section-body">
+                    <div class="file_display">
+                    {%- for file in files %}
+                        {% set ext = file.original_extension or '' %}
+                        <div class="file_card"
+                             data-index="{{ loop.index0 }}"
+                             data-extension="{{ ext }}"
+                             data-filename="{{ file.filename }}"
+                             data-date="{{ file.uploaded_at.isoformat() if file.uploaded_at else '' }}">
+                            <input type="checkbox" class="file-checkbox" data-id="{{ file.id }}">
+                            <span class="ext-badge ext-{{ ext.replace('.', '') }}">{{ ext.replace('.', '').upper() or '?' }}</span>
+                            <div class="file-info">
+                                <div class="filename">{{ file.filename }}</div>
+                                <div class="date">{{ file.uploaded_at }}</div>
+                            </div>
+                            <button class="btn-delete" data-id="{{ file.id }}">Delete</button>
+                        </div>
+                    {%- endfor %}</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ================================================================
+             SECTION 2: Website Scraping
+             ================================================================ -->
+        <div class="workflow-panel workflow-scrape">
+            <div class="workflow-label">
+                <h2 class="workflow-title">Add from the Web</h2>
+                <p class="workflow-desc">Crawl and download web pages into this workspace</p>
+            </div>
+
+            <!-- ========== Website Download Section ========== -->
+            <div class="scrape-area" id="scrapeArea"
+                 data-discover-url="/{{ workspace.id }}/scrape/discover"
+                 data-process-url="/{{ workspace.id }}/scrape/process">
+                <div class="scrape-form">
+                    <!-- URL + Category row -->
+                    <div class="scrape-form-main">
+                        <div class="scrape-field scrape-field-url">
+                            <label for="scrapeUrl">Website URL</label>
+                            <input type="url" id="scrapeUrl" placeholder="https://example.com/docs/">
+                        </div>
+                        <div class="scrape-field scrape-field-category">
+                            <label for="scrapeCategory">Category Name</label>
+                            <div class="scrape-category-wrap">
+                                <input type="text" id="scrapeCategory" placeholder="e.g. IT_Services" autocomplete="off"
+                                    data-categories="{{ scrape_categories | join(',') }}">
+                                <ul class="scrape-category-dropdown" id="scrapeCategoryDropdown"></ul>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Everything below the URL/category row is hidden until both fields have input -->
+                    <div class="scrape-form-extras" id="scrapeFormExtras">
+                    <div class="scrape-form-extras-inner">
+
+                    <!-- Scope selector -->
+                    <div class="scrape-scope-section">
+                        <span class="scrape-scope-label">What do you want to add?</span>
+                        <div class="scrape-scope-cards" id="scopeCards">
+                            <div class="scrape-scope-card" data-scope="single">
+                                <div class="scrape-scope-card-title">Just this page</div>
+                                <div class="scrape-scope-card-desc">Only the URL entered</div>
+                            </div>
+                            <div class="scrape-scope-card" data-scope="links">
+                                <div class="scrape-scope-card-title">Pages linked from here</div>
+                                <div class="scrape-scope-card-desc">Follows links from this page</div>
+                            </div>
+                            <div class="scrape-scope-card" data-scope="prefix">
+                                <div class="scrape-scope-card-title">All pages under this prefix</div>
+                                <div class="scrape-scope-card-desc">Everything within this URL path</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Depth sub-option (shown only when "links" scope is selected) -->
+                    <div class="scrape-depth-panel" id="scrapeDepthPanel">
+                        <span class="scrape-depth-label">How deep should we follow links?</span>
+                        <div class="scrape-depth-buttons" id="scrapeDepthBtns">
+                            <button class="scrape-depth-btn active" data-depth="1">
+                                <span class="scrape-depth-btn-level">1 level</span>
+                                <span class="scrape-depth-btn-desc">Links on this page</span>
+                            </button>
+                            <button class="scrape-depth-btn" data-depth="2">
+                                <span class="scrape-depth-btn-level">2 levels</span>
+                                <span class="scrape-depth-btn-desc">Links of links</span>
+                            </button>
+                            <button class="scrape-depth-btn" data-depth="3">
+                                <span class="scrape-depth-btn-level">3 levels</span>
+                                <span class="scrape-depth-btn-desc">One step further</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Advanced Options -->
+                    <div class="scrape-advanced-toggle" id="scrapeAdvancedToggle">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="chevron-icon">
+                            <polyline points="6 9 12 15 18 9"/>
+                        </svg>
+                        Advanced options
+                    </div>
+                    <div class="scrape-advanced" id="scrapeAdvanced">
+                        <div class="scrape-form-row">
+                            <div class="scrape-field">
+                                <label for="scrapeMaxPages">Max Pages</label>
+                                <select id="scrapeMaxPages">
+                                    <option value="0">No limit</option>
+                                    <option value="100" selected>100</option>
+                                    <option value="200">200</option>
+                                    <option value="300">300</option>
+                                </select>
+                                <p class="setting-hint">Maximum number of pages to find.</p>
+                            </div>
+                        </div>
+                        <div class="scrape-form-row">
+                            <label class="scrape-checkbox-label">
+                                <input type="checkbox" id="scrapeStayOnDomain" checked>
+                                Stay on same domain
+                                <span class="setting-hint" style="margin: 0 0 0 4px;">— Only follow links on the same website</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Live preview bar -->
+                    <div class="scrape-preview-bar" id="scrapePreviewBar">
+                        <span class="scrape-preview-dot" id="scrapePreviewDot"></span>
+                        <span class="scrape-preview-text" id="scrapePreviewText">Enter a URL and choose a scope to get started.</span>
+                    </div>
+
+                    <!-- Submit button -->
+                    <button class="btn-scrape btn-scrape-submit" id="scrapeBtn" disabled>
+                        Discover pages
+                    </button>
+
+                    </div><!-- /.scrape-form-extras-inner -->
+                    </div><!-- /#scrapeFormExtras -->
+                </div>
+
+                <!-- URL Discovery Results (hidden until discovery completes) -->
+                <div class="scrape-discovery" id="scrapeDiscovery">
+                    <div class="scrape-discovery-header">
+                        <div class="scrape-discovery-header-left">
+                            <label class="select-all-wrap" title="Select all">
+                                <input type="checkbox" id="scrapeSelectAllCb" checked>
+                            </label>
+                            <span class="scrape-discovery-count" id="scrapeDiscoveryCount"></span>
+                        </div>
+                        <div class="scrape-discovery-actions">
+                            <button class="btn-scrape-cancel" id="scrapeCancelBtn">Cancel</button>
+                        </div>
+                    </div>
+                    <div class="scrape-url-list" id="scrapeUrlList"></div>
+                    <div class="scrape-discovery-footer">
+                        <button class="btn-scrape-process" id="scrapeProcessBtn">Add to knowledge base</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ========== Scrape Category Filter Bar (inside panel) ========== -->
+            <div class="filter-bar" id="scrapeFilterBar">
+                <button class="filter-pill active" data-cat="all">All</button>
+                {% for cat in scrape_categories %}
+                <button class="filter-pill" data-cat="{{ cat }}">{{ cat }}</button>
+                {% endfor %}
+            </div>
+
+            <!-- ========== Downloaded Websites Section ========== -->
+            <div class="section scraped-files-section" id="scrapedFilesSection">
+                <div class="section-header">
+                    <div class="section-header-left">
+                        <label class="select-all-wrap" title="Select all">
+                            <input type="checkbox" id="scrapeFilesSelectAllCb">
+                        </label>
+                        <h2>Downloaded Websites</h2>
+                        <span class="upload-counter" id="scrapeCounter"></span>
+                    </div>
+                    <div class="section-header-right">
+                        <select class="sort-select" id="scrapeSortSelect">
+                            <option value="newest">Newest First</option>
+                            <option value="oldest">Oldest First</option>
+                            <option value="az">Alphabetical A-Z</option>
+                            <option value="za">Alphabetical Z-A</option>
+                            <option value="category">By Category</option>
+                        </select>
+                    </div>
+                </div>
+                <!-- Bulk Actions Bar for scraped files -->
+                <div class="bulk-actions" id="scrapeBulkActions">
+                    <span><strong id="scrapeSelectedCount">0</strong> selected</span>
+                    <button class="btn-delete-bulk" id="scrapeBulkDeleteBtn">Delete Selected</button>
+                </div>
+                <div class="section-body">
+                    <div class="file_display" id="scrapeFileDisplay">
+                    {%- for file in scraped_files %}
+                        <div class="file_card"
+                             data-index="{{ loop.index0 }}"
+                             data-extension=".html"
+                             data-filename="{{ file.filename }}"
+                             data-category="{{ file.category.replace('scrape_', '') }}"
+                             data-source-url="{{ file.source_url or '' }}"
+                             data-date="{{ file.uploaded_at.isoformat() if file.uploaded_at else '' }}">
+                            <input type="checkbox" class="file-checkbox scrape-file-checkbox" data-id="{{ file.id }}">
+                            <span class="ext-badge ext-web">WEB</span>
+                            <div class="file-info">
+                                <div class="filename">{{ file.filename }}</div>
+                                <div class="date source-url" title="{{ file.source_url or '' }}">{{ file.source_url or file.uploaded_at }}</div>
+                            </div>
+                            <button class="btn-delete" data-id="{{ file.id }}">Delete</button>
+                        </div>
+                    {%- endfor %}</div>
                 </div>
             </div>
         </div>
@@ -143,6 +351,6 @@
         </div>
     </div>
 
-    <script src="{{ url_for('static', path='js/utils.js') }}?v=2"></script>
+    <script src="{{ url_for('static', path='js/utils.js') }}?v=4"></script>
 </body>
 </html>

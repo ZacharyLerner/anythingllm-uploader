@@ -15,6 +15,7 @@ class FileResponse(FileBase):
     id: str
     workspace_id: str
     original_extension: str | None = None
+    category: str
     uploaded_at: datetime
 
 

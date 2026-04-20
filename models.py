@@ -26,6 +26,8 @@ class File(Base):
     filename = Column(String, nullable=False)
     original_extension = Column(String, nullable=True)
     workspace_id = Column(String, ForeignKey("workspaces.id"), nullable=False)
+    category = Column(String, nullable=False, default="uploaded_file")
+    source_url = Column(String, nullable=True)
 
     uploaded_at = Column(
         DateTime, default=lambda: datetime.now(ZoneInfo("America/New_York"))

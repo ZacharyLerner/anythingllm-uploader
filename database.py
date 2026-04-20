@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 SQLALCHEMY_DATABASE_URL = "sqlite:///./uploader_files.db"

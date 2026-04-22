@@ -5,10 +5,10 @@ Setup for a fresh Linux server (Amazon Linux 2023, aarch64).
 ## 1. System Packages
 
 ```bash
-sudo dnf install -y python3.11 libxcb libX11
+sudo dnf install -y python3.11 mesa-libGL libxcb libX11
 ```
 
-`libxcb` and `libX11` are required by OpenCV — without them OCR fails with `libxcb.so.1: cannot open shared object file`.
+`mesa-libGL`, `libxcb`, and `libX11` are required by OpenCV — without them OCR fails with errors like `libGL.so.1: cannot open shared object file` or `libxcb.so.1: cannot open shared object file`.
 
 ## 2. Clone and Create Venv
 
@@ -30,6 +30,8 @@ mkdir -p ~/tmp
 export TMPDIR=$HOME/tmp
 ```
 
+`TMPDIR` only persists for the current shell. If you'll be reinstalling later, add `export TMPDIR=$HOME/tmp` to `~/.bashrc`.
+
 Then install:
 
 ```bash
@@ -47,8 +49,16 @@ ANYTHINGLLM_API_KEY=your-api-key-here
 
 ## 5. Run
 
+Development (auto-reload on file changes):
+
 ```bash
 fastapi dev main.py --host 0.0.0.0 --port 3000
+```
+
+Production (no auto-reload):
+
+```bash
+fastapi run main.py --host 0.0.0.0 --port 3000
 ```
 
 Server at `http://<host>:3000`, docs at `/docs`.

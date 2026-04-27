@@ -6,7 +6,7 @@ import io
 
 
 # Checks if a workspace exists by ID, return boolean
-def workspace_exists(workspace: str) -> bool:
+def LLM_workspace_exists(workspace: str) -> bool:
     response = requests.get(f"{API_URL}/workspace/{workspace}", headers=HEADERS)
     if response.status_code == 200:
         data = response.json()
@@ -23,7 +23,7 @@ def workspace_exists(workspace: str) -> bool:
 
 
 # Uploads and embeds a document into a workspace
-def upload_document(uploaded_file, file_name, workspace: str):
+def LLM_upload_document(uploaded_file, file_name, workspace: str):
     response = requests.post(
         f"{API_URL}/document/upload",
         headers=HEADERS,
@@ -35,7 +35,7 @@ def upload_document(uploaded_file, file_name, workspace: str):
     return data["documents"][0]["location"]
 
 
-def remove_document(workspace: str, location: str) -> bool:
+def LLM_remove_document(workspace: str, location: str) -> bool:
     # Step 1: Remove from workspace embeddings
     resp = requests.post(
         f"{API_URL}/workspace/{workspace}/update-embeddings",
@@ -59,7 +59,7 @@ def remove_document(workspace: str, location: str) -> bool:
     return True
 
 
-def json_workspace_settings(workspace: str):
+def LLM_json_workspace_settings(workspace: str):
     response = requests.get(
         f"{API_URL}/workspace/{workspace}",
         headers=HEADERS,
@@ -86,7 +86,7 @@ def json_workspace_settings(workspace: str):
 
 
 # Updates workspace settings via the AnythingLLM API
-def update_workspace_settings(workspace: str, settings: dict) -> bool:
+def LLM_update_workspace_settings(workspace: str, settings: dict) -> bool:
     payload = {}
     if "prompt" in settings:
         payload["openAiPrompt"] = settings["prompt"]
@@ -110,7 +110,7 @@ def update_workspace_settings(workspace: str, settings: dict) -> bool:
     return True
 
 # create a new workspace in anythingLLM
-def generate_new_workspace(workspace_id: str, workspace_name: str):
+def LLM_generate_new_workspace(workspace_id: str, workspace_name: str):
     # default options payload 
     payload = {
         "name": workspace_id,
@@ -138,6 +138,6 @@ def generate_new_workspace(workspace_id: str, workspace_name: str):
             return False
     return True
 
-def delete_workspace(workspace_id: str):
+def LLM_delete_workspace(workspace_id: str):
     request = requests.delete(f"{API_URL}/workspace/{workspace_id}",headers=HEADERS,)
     return request

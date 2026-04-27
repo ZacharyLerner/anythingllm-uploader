@@ -12,13 +12,13 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from anythingllm import (
-    workspace_exists,
-    upload_document,
-    remove_document,
-    json_workspace_settings,
-    update_workspace_settings,
-    generate_new_workspace,
-    delete_workspace,
+    LLM_workspace_exists,
+    LLM_upload_document,
+    LLM_remove_document,
+    LLM_json_workspace_settings,
+    LLM_update_workspace_settings,
+    LLM_generate_new_workspace,
+    LLM_delete_workspace,
 )
 from config import TEXT_EXTENSIONS, DEBUG_UPLOAD_DIR, MAX_UPLOAD_BYTES
 from database import Base, engine, get_db
@@ -128,7 +128,7 @@ async def processes_file(content, fname, workspace_id, queue):
 
             await queue.put({"file": fname, "status": "embedded"})
             file_location = await asyncio.to_thread(
-                upload_document, LLM_File, LLM_File.name, workspace_id
+                LLM_upload_document, LLM_File, LLM_File.name, workspace_id
             )
 
             await queue.put(
@@ -231,7 +231,7 @@ async def create_upload_files(
 # function for deleting a file asyncronsoly 
 async def _delete_file(file_id, workspace_id):
     async with SEM:
-        success = await asyncio.to_thread(remove_document, workspace_id, file_id)
+        success = await asyncio.to_thread(LLM_remove_document, workspace_id, file_id)
         return file_id, success
 
 
@@ -242,7 +242,7 @@ async def delete_uploaded_file(file_id: str, db: Session = Depends(get_db)):
     if not file_to_delete:
         raise HTTPException(status_code=404, detail="File not found")
 
-    success = remove_document(file_to_delete.workspace_id, file_id)
+    success = LLM_remove_document(file_to_delete.workspace_id, file_id)
     if not success:
         raise HTTPException(status_code=500, detail="Failed to delete from LLM")
 
@@ -280,7 +280,7 @@ async def delete_bulk_files(request: Request, db: Session = Depends(get_db)):
 
 @app.get("/api/v1/workspaces/{workspace_id}/settings",include_in_schema=False)
 async def fetch_workspace_settings(workspace_id: str):
-    settings = json_workspace_settings(workspace_id)
+    settings = LLM_json_workspace_settings(workspace_id)
     if settings is None:
         raise HTTPException(status_code=404, detail="Workspace settings not found")
     return settings
@@ -289,7 +289,7 @@ async def fetch_workspace_settings(workspace_id: str):
 @app.post("/api/v1/workspaces/{workspace_id}/settings",include_in_schema=False)
 async def save_workspace_settings(workspace_id: str, request: Request):
     body = await request.json()
-    success = update_workspace_settings(workspace_id, body)
+    success = LLM_update_workspace_settings(workspace_id, body)
     if not success:
         raise HTTPException(
             status_code=500, detail="Failed to update workspace settings"
@@ -375,7 +375,7 @@ async def process_scraped_url(url, category, workspace_id, queue):
                 await asyncio.to_thread(debug_path.write_text, LLM_File.getvalue())
 
             file_location = await asyncio.to_thread(
-                upload_document, LLM_File, filename, workspace_id
+                LLM_upload_document, LLM_File, filename, workspace_id
             )
 
             await queue.put(
@@ -464,13 +464,23 @@ async def scrape_process(workspace_id: str, request: Request, db: Session = Depe
 # api endpoints
 # -------------------------------------------------------------------------------------------#
 
-
+# Uploads a document through API call
 @app.post("/api/v1/workspaces/{workspace_id}/upload", response_model=list[FileResponse])
 async def upload_to_workspace(
     workspace_id: str,
     uploaded_files: list[UploadFile] = File(...),
     db: Session = Depends(get_db),
 ):
+    """
+    Upload one or more files to a workspace.
+
+    Non-text files are converted to Markdown before being sent to AnythingLLM.
+    Text files are uploaded as-is. Each file is registered in the local database
+    with its original extension preserved.
+
+    Raises **404** if the workspace does not exist, or **413** if any file exceeds
+    the maximum upload size.
+    """
     workspace = db.query(Workspace).filter(Workspace.id == workspace_id).first()
     if not workspace:
         raise HTTPException(status_code=404, detail="Workspace not found")
@@ -497,7 +507,7 @@ async def upload_to_workspace(
         else:
             LLM_File = io.StringIO(content.decode("utf-8"))
 
-        file_location = upload_document(LLM_File, file_name, workspace.id)
+        file_location = LLM_upload_document(LLM_File, file_name, workspace.id)
 
         db_file = FileModel(
             id=file_location,
@@ -514,31 +524,78 @@ async def upload_to_workspace(
         db.refresh(f)
     return saved_files
 
+# Creates a new workspace in AnythingLLM and the database 
 @app.post("/api/v1/workspaces/new")
 async def create_new_workspace(workspace: WorkspaceCreate, request: Request,db: Session = Depends(get_db)):
+    """
+    Create a new workspace in AnythingLLM and the local database.
+
+    - **id**: unique workspace identifier
+    - **name**: display name for the workspace
+    - **owners**: list of owner user IDs
+
+    Raises **409** if a workspace with the given ID already exists.
+    """
     existing = db.query(Workspace).filter(Workspace.id == workspace.id).first()
     if existing:
         raise HTTPException(status_code=409, detail="Workspace already exists")
-    elif (generate_new_workspace(workspace.id, workspace.name)):
+    elif (LLM_generate_new_workspace(workspace.id, workspace.name)):
         db_workspace = Workspace(id=workspace.id, name=workspace.name, owners=workspace.owners)
         db.add(db_workspace)
         db.commit()
         db.refresh(db_workspace)
         return db_workspace
     
+# Creates a new workspace in just the database
+@app.post("/api/v1/workspaces/db")
+async def create_new_workspace_DB_only(workspace: WorkspaceCreate, request: Request,db: Session = Depends(get_db)):
+    """
+    Create a new workspace in the local database only (does not create it in AnythingLLM).
+
+    Use this endpoint when the workspace already exists in AnythingLLM and you only need
+    to register it in the local database.
+
+    - **id**: unique workspace identifier
+    - **name**: display name for the workspace
+    - **owners**: list of owner user IDs
+
+    Raises **409** if a workspace with the given ID already exists in the database.
+    """
+    existing = db.query(Workspace).filter(Workspace.id == workspace.id).first()
+    if existing:
+        raise HTTPException(status_code=409, detail="Workspace already exists")
+    else:
+        db_workspace = Workspace(id=workspace.id, name=workspace.name, owners=workspace.owners)
+        db.add(db_workspace)
+        db.commit()
+        db.refresh(db_workspace)
+        return db_workspace
+
+# Gets the workspace by workspace id
 @app.get("/api/v1/workspaces/{workspace_id}")
 async def get_workspace_info(workspace_id: str, request: Request,db: Session = Depends(get_db)):
+    """
+    Retrieve a workspace by its ID.
+
+    Raises **404** if no workspace with the given ID exists.
+    """
     workspace = db.query(Workspace).where(Workspace.id == workspace_id).first()
     if not workspace:
         raise HTTPException(status_code=404, detail="Workspace not found")
     return workspace
 
+# Deletes a workspace by workspaceID
 @app.delete("/api/v1/workspaces/{workspace_id}")
 async def delete_workspace_by_id(workspace_id: str, db: Session = Depends(get_db)):
+    """
+    Delete a workspace by its ID from both AnythingLLM and the local database.
+
+    Raises **404** if the workspace does not exist, or **500** if deletion in AnythingLLM fails.
+    """
     workspace = db.query(Workspace).where(Workspace.id == workspace_id).first()
     if not workspace:
         raise HTTPException(status_code=404, detail="Workspace not found")
-    response = delete_workspace(workspace_id)
+    response = LLM_delete_workspace(workspace_id)
     if response.status_code != 200:
         raise HTTPException(status_code=500, detail="Failed to delete workspace")
     db.delete(workspace)

@@ -286,6 +286,18 @@ async def fetch_workspace_settings(workspace_id: str):
     return settings
 
 
+@app.get("/{workspace_id}/settings", include_in_schema=False, name="workspace_settings")
+async def workspace_settings_page(request: Request, workspace_id: str, db: Session = Depends(get_db)):
+    workspace = db.query(Workspace).where(Workspace.id == workspace_id).first()
+    if not workspace:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+    return templates.TemplateResponse(
+        request,
+        "settings.html",
+        {"workspace": workspace},
+    )
+
+
 @app.post("/api/v1/workspaces/{workspace_id}/settings",include_in_schema=False)
 async def save_workspace_settings(workspace_id: str, request: Request):
     body = await request.json()

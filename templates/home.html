@@ -16,13 +16,13 @@
                     <h1>{{ workspace.name }}</h1>
                     <p class="subtitle">Workspace {{ workspace.id }}</p>
                 </div>
-                <button class="btn-settings" id="settingsBtn" title="Adjust Settings">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <a class="btn-settings" href="/{{ workspace.id }}/settings">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
                         <circle cx="12" cy="12" r="3"/>
                     </svg>
                     Settings
-                </button>
+                </a>
             </div>
         </div>
 
@@ -31,8 +31,14 @@
              ================================================================ -->
         <div class="workflow-panel workflow-upload">
             <div class="workflow-label">
-                <h2 class="workflow-title">Upload Documents</h2>
-                <p class="workflow-desc">Add files from your computer to this workspace</p>
+                <div class="workflow-label-text">
+                    <h2 class="workflow-title">Upload Documents</h2>
+                    <p class="workflow-desc">Add files from your computer to this workspace</p>
+                </div>
+                <button class="btn-collapse" id="uploadCollapseBtn" title="Collapse" aria-expanded="true">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
+                    <span class="btn-collapse-label">Collapse</span>
+                </button>
             </div>
 
             <!-- ========== File Drop Zone ========== -->
@@ -47,6 +53,11 @@
                 <p>Drop files here or click to upload</p>
                 <p class="hint">PDF, DOCX, PPTX, HTML, Markdown, and more</p>
                 <input type="file" id="fileInput" multiple>
+            </div>
+
+            <!-- ========== Upload Search Bar ========== -->
+            <div class="search-bar-wrap">
+                <input type="search" id="uploadSearchBar" class="file-search-bar" placeholder="Search files...">
             </div>
 
             <!-- ========== Extension Filter Bar (inside panel) ========== -->
@@ -109,8 +120,14 @@
              ================================================================ -->
         <div class="workflow-panel workflow-scrape">
             <div class="workflow-label">
-                <h2 class="workflow-title">Add from the Web</h2>
-                <p class="workflow-desc">Crawl and download web pages into this workspace</p>
+                <div class="workflow-label-text">
+                    <h2 class="workflow-title">Add from the Web</h2>
+                    <p class="workflow-desc">Crawl and download web pages into this workspace</p>
+                </div>
+                <button class="btn-collapse" id="scrapeCollapseBtn" title="Collapse" aria-expanded="true">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
+                    <span class="btn-collapse-label">Collapse</span>
+                </button>
             </div>
 
             <!-- ========== Website Download Section ========== -->
@@ -204,15 +221,18 @@
                         </div>
                     </div>
 
-                    <!-- Live preview bar -->
+                    <!-- Live preview bar + re-run -->
                     <div class="scrape-preview-bar" id="scrapePreviewBar">
                         <span class="scrape-preview-dot" id="scrapePreviewDot"></span>
                         <span class="scrape-preview-text" id="scrapePreviewText">Enter a URL and choose a scope to get started.</span>
+                        <button class="btn-rerun" id="scrapeRerunBtn" title="Re-run discovery" hidden>
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                        </button>
                     </div>
 
-                    <!-- Submit button -->
-                    <button class="btn-scrape btn-scrape-submit" id="scrapeBtn" disabled>
-                        Discover pages
+                    <!-- Primary action -->
+                    <button class="btn-scrape-process" id="scrapeProcessBtn" disabled>
+                        Add to knowledge base
                     </button>
 
                     </div><!-- /.scrape-form-extras-inner -->
@@ -228,15 +248,14 @@
                             </label>
                             <span class="scrape-discovery-count" id="scrapeDiscoveryCount"></span>
                         </div>
-                        <div class="scrape-discovery-actions">
-                            <button class="btn-scrape-cancel" id="scrapeCancelBtn">Cancel</button>
-                        </div>
                     </div>
                     <div class="scrape-url-list" id="scrapeUrlList"></div>
-                    <div class="scrape-discovery-footer">
-                        <button class="btn-scrape-process" id="scrapeProcessBtn">Add to knowledge base</button>
-                    </div>
                 </div>
+            </div>
+
+            <!-- ========== Scrape Search Bar ========== -->
+            <div class="search-bar-wrap">
+                <input type="search" id="scrapeSearchBar" class="file-search-bar" placeholder="Search websites...">
             </div>
 
             <!-- ========== Scrape Category Filter Bar (inside panel) ========== -->
@@ -303,50 +322,6 @@
             <div class="delete-spinner"></div>
             <h3 id="deleteOverlayTitle">Deleting files...</h3>
             <p id="deleteOverlayMsg">This may take a moment for larger selections.</p>
-        </div>
-    </div>
-
-    <!-- ========== Settings Slide-Out Panel ========== -->
-    <div class="settings-overlay" id="settingsOverlay"></div>
-    <div class="settings-panel" id="settingsPanel" data-workspace="{{ workspace.id }}">
-        <div class="settings-panel-header">
-            <h2>Workspace Settings</h2>
-            <button class="settings-close" id="settingsClose">&times;</button>
-        </div>
-        <div class="settings-panel-body">
-            <div class="setting-group">
-                <label for="settingPrompt">System Prompt</label>
-                <textarea id="settingPrompt" rows="5" placeholder="Enter a system prompt for this workspace..."></textarea>
-            </div>
-            <div class="setting-group">
-                <label for="settingTopN">Top N Results</label>
-                <div class="setting-range-row">
-                    <input type="range" id="settingTopN" min="1" max="10" value="4" step="1">
-                    <input type="number" class="range-value-input" id="topNValue" min="1" max="10" step="1" value="4">
-                </div>
-                <p class="setting-hint">Number of document chunks to retrieve per query.</p>
-            </div>
-            <div class="setting-group">
-                <label for="settingTemp">Temperature</label>
-                <div class="setting-range-row">
-                    <input type="range" id="settingTemp" min="0" max="1" value="0.7" step="0.1">
-                    <input type="number" class="range-value-input" id="tempValue" min="0" max="1" step="0.1" value="0.7">
-                </div>
-                <p class="setting-hint">Higher values make output more creative, lower values more deterministic.</p>
-            </div>
-            <div class="setting-group">
-                <label for="settingSimilarity">Similarity Threshold</label>
-                <select class="setting-select" id="settingSimilarity">
-                    <option value="0">No restriction</option>
-                    <option value="0.25" selected>Low (similarity score &ge; .25)</option>
-                    <option value="0.5">Medium (similarity score &ge; .50)</option>
-                    <option value="0.75">High (similarity score &ge; .75)</option>
-                </select>
-                <p class="setting-hint">Minimum relevance score for retrieved chunks.</p>
-            </div>
-        </div>
-        <div class="settings-panel-footer">
-            <button class="btn-settings-save" id="settingsSaveBtn">Save Settings</button>
         </div>
     </div>
 

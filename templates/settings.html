@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', path='css/main.css') }}?v=4">
+    <title>{{ workspace.name }} - Settings</title>
+    <style>
+        body {
+            padding: 0;
+            min-height: 100vh;
+        }
+
+        .settings-chrome {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* ── Top bar ── */
+        .settings-topbar {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 12px 28px;
+            background: #fff;
+            border-bottom: 1px solid var(--gray-100);
+            flex-shrink: 0;
+        }
+
+        .settings-topbar-title {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .settings-topbar-title h1 {
+            font-size: 15px;
+            font-weight: 700;
+            color: var(--uri-blue);
+            margin: 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .settings-topbar-title p {
+            font-size: 11px;
+            color: var(--gray-600);
+            margin: 1px 0 0;
+        }
+
+        .btn-settings-save {
+            background-color: var(--uri-blue);
+            color: #fff;
+            border: none;
+            padding: 11px 32px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            font-family: inherit;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: background-color 0.2s, box-shadow 0.2s;
+            box-shadow: 0 2px 8px rgba(0, 33, 71, 0.18);
+        }
+
+        .btn-settings-save:hover:not(:disabled) {
+            background-color: var(--uri-blue-light);
+            box-shadow: 0 4px 12px rgba(0, 33, 71, 0.22);
+        }
+
+        .btn-settings-save:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .prompt-footer {
+            display: flex;
+            justify-content: flex-end;
+            padding: 16px 0 0;
+            border-top: 1px solid var(--gray-100);
+            margin-top: 24px;
+        }
+
+        /* ── Scrollable body ── */
+        .settings-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 28px 32px;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+
+        /* System prompt — tall and full width */
+        .setting-group-prompt label {
+            display: block;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--gray-600);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+
+        .setting-group-prompt textarea {
+            width: 100%;
+            flex: 1;
+            min-height: 280px;
+            border: 1px solid var(--gray-100);
+            border-radius: 10px;
+            padding: 14px 16px;
+            font-size: 14px;
+            font-family: inherit;
+            line-height: 1.65;
+            resize: vertical;
+            color: var(--uri-blue);
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        .setting-group-prompt textarea:focus {
+            outline: none;
+            border-color: var(--uri-blue-light);
+            box-shadow: 0 0 0 3px rgba(34, 119, 179, 0.1);
+        }
+
+        /* Three controls in a row */
+        .settings-controls-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 16px;
+            padding-top: 4px;
+            border-top: 1px solid var(--gray-100);
+        }
+
+        .settings-controls-row .setting-group {
+            margin-bottom: 0;
+        }
+
+        .settings-controls-row .setting-group label {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--gray-600);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+            display: block;
+        }
+
+        .settings-controls-row .setting-hint {
+            font-size: 10px;
+        }
+
+        .settings-controls-row .setting-range-row {
+            gap: 8px;
+        }
+
+        .settings-controls-row .range-value-input {
+            width: 44px;
+            font-size: 12px;
+            padding: 3px 4px;
+        }
+
+        .settings-controls-row .setting-select {
+            font-size: 12px;
+            padding: 6px 8px;
+        }
+    </style>
+</head>
+<body>
+<div class="settings-chrome">
+
+    <!-- Top bar -->
+    <div class="settings-topbar">
+        <a class="settings-back-link" href="/{{ workspace.id }}">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+            Back
+        </a>
+        <div class="settings-topbar-title">
+            <h1>{{ workspace.name }}</h1>
+            <p>Workspace Settings</p>
+        </div>
+    </div>
+
+    <!-- Body -->
+    <div class="settings-body" data-workspace="{{ workspace.id }}">
+
+        <!-- System prompt — primary focus -->
+        <div class="setting-group-prompt">
+            <label for="settingPrompt">System Prompt</label>
+            <textarea id="settingPrompt" rows="10" placeholder="Loading settings..."></textarea>
+        </div>
+
+        <!-- Three controls in a row -->
+        <div class="settings-controls-row">
+            <div class="setting-group">
+                <label for="settingTopN">Top N Results</label>
+                <div class="setting-range-row">
+                    <input type="range" id="settingTopN" min="1" max="10" value="4" step="1">
+                    <input type="number" class="range-value-input" id="topNValue" min="1" max="10" step="1" value="4">
+                </div>
+                <p class="setting-hint">Chunks retrieved per query.</p>
+            </div>
+
+            <div class="setting-group">
+                <label for="settingTemp">Temperature</label>
+                <div class="setting-range-row">
+                    <input type="range" id="settingTemp" min="0" max="1" value="0.7" step="0.1">
+                    <input type="number" class="range-value-input" id="tempValue" min="0" max="1" step="0.1" value="0.7">
+                </div>
+                <p class="setting-hint">Higher = more creative.</p>
+            </div>
+
+            <div class="setting-group">
+                <label for="settingSimilarity">Similarity Threshold</label>
+                <select class="setting-select" id="settingSimilarity">
+                    <option value="0">No restriction</option>
+                    <option value="0.25" selected>Low (&ge; .25)</option>
+                    <option value="0.5">Medium (&ge; .50)</option>
+                    <option value="0.75">High (&ge; .75)</option>
+                </select>
+                <p class="setting-hint">Min relevance for chunks.</p>
+            </div>
+        </div>
+
+        <div class="prompt-footer">
+            <button class="btn-settings-save" id="settingsSaveBtn">Save Settings</button>
+        </div>
+
+    </div>
+</div>
+
+<script>
+const workspaceId = document.querySelector(".settings-body").dataset.workspace;
+
+const promptEl  = document.getElementById("settingPrompt");
+const topNEl    = document.getElementById("settingTopN");
+const topNInput = document.getElementById("topNValue");
+const tempEl    = document.getElementById("settingTemp");
+const tempInput = document.getElementById("tempValue");
+const simEl     = document.getElementById("settingSimilarity");
+const saveBtn   = document.getElementById("settingsSaveBtn");
+
+// Range <-> number sync
+topNEl.addEventListener("input", () => { topNInput.value = topNEl.value; });
+topNInput.addEventListener("input", () => { topNEl.value = Math.min(Math.max(parseInt(topNInput.value) || 1, 1), 10); });
+topNInput.addEventListener("change", () => {
+    const v = Math.min(Math.max(parseInt(topNInput.value) || 1, 1), 10);
+    topNInput.value = v; topNEl.value = v;
+});
+tempEl.addEventListener("input", () => { tempInput.value = tempEl.value; });
+tempInput.addEventListener("input", () => { tempEl.value = Math.min(Math.max(parseFloat(tempInput.value) || 0, 0), 1); });
+tempInput.addEventListener("change", () => {
+    const v = Math.round(Math.min(Math.max(parseFloat(tempInput.value) || 0, 0), 1) * 10) / 10;
+    tempInput.value = v; tempEl.value = v;
+});
+
+// Load settings
+const fields = [promptEl, topNEl, topNInput, tempEl, tempInput, simEl];
+fields.forEach(f => f.disabled = true);
+
+fetch(`/api/v1/workspaces/${workspaceId}/settings`)
+    .then(res => { if (!res.ok) throw new Error(`${res.status}`); return res.json(); })
+    .then(data => {
+        promptEl.value = data.prompt || "";
+        topNEl.value = data.top_n ?? 4;
+        topNInput.value = topNEl.value;
+        tempEl.value = data.temperature ?? 0.7;
+        tempInput.value = tempEl.value;
+        const raw = data.similarity_threshold ?? 0.25;
+        const closest = [0, 0.25, 0.5, 0.75].reduce((p, c) => Math.abs(c - raw) < Math.abs(p - raw) ? c : p);
+        simEl.value = String(closest);
+    })
+    .catch(err => { promptEl.placeholder = "Failed to load settings"; console.error(err); })
+    .finally(() => {
+        fields.forEach(f => f.disabled = false);
+        promptEl.placeholder = "Enter a system prompt for this workspace...";
+    });
+
+// Save
+saveBtn.addEventListener("click", async () => {
+    saveBtn.disabled = true;
+    saveBtn.textContent = "Saving...";
+    try {
+        const res = await fetch(`/api/v1/workspaces/${workspaceId}/settings`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                prompt: promptEl.value,
+                top_n: parseInt(topNEl.value) || 4,
+                temperature: parseFloat(tempEl.value) || 0.7,
+                similarity_threshold: parseFloat(simEl.value),
+            }),
+        });
+        if (!res.ok) throw new Error(`${res.status}`);
+        saveBtn.textContent = "Saved!";
+        saveBtn.style.backgroundColor = "#22c55e";
+        setTimeout(() => {
+            window.location.href = `/${workspaceId}`;
+        }, 500);
+    } catch (err) {
+        console.error(err);
+        saveBtn.textContent = "Save Failed";
+        saveBtn.style.backgroundColor = "#ef4444";
+        setTimeout(() => {
+            saveBtn.textContent = "Save Settings";
+            saveBtn.style.backgroundColor = "";
+            saveBtn.disabled = false;
+        }, 2000);
+    }
+});
+</script>
+</body>
+</html>

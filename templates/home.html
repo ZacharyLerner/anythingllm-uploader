@@ -142,7 +142,8 @@
                         <div class="scrape-field scrape-field-category">
                             <label for="scrapeCategory">Category Name</label>
                             <div class="scrape-category-wrap">
-                                <input type="text" id="scrapeCategory" placeholder="e.g. IT_Services" autocomplete="off">
+                                <input type="text" id="scrapeCategory" placeholder="e.g. IT_Services" autocomplete="off"
+                                       data-categories="{{ scrape_categories | join(',') }}">
                                 <ul class="scrape-category-dropdown" id="scrapeCategoryDropdown"></ul>
                             </div>
                         </div>
@@ -228,8 +229,8 @@
                         </div>
 
                         <!-- Submit -->
-                        <button class="btn-scrape-process" id="scrapeProcessBtn" disabled>
-                            Add to Knowledge Base
+                        <button class="btn-scrape btn-scrape-submit" id="scrapeBtn" disabled>
+                            Discover pages
                         </button>
 
                     </div><!-- /.scrape-form-extras-inner -->
@@ -245,8 +246,12 @@
                             </label>
                             <span class="scrape-discovery-count" id="scrapeDiscoveryCount"></span>
                         </div>
+                        <div class="scrape-discovery-header-right">
+                            <button class="btn-scrape-cancel" id="scrapeCancelBtn">Cancel</button>
+                        </div>
                     </div>
                     <div class="scrape-url-list" id="scrapeUrlList"></div>
+                    <button class="btn-scrape-process" id="scrapeProcessBtn">Add to knowledge base</button>
                 </div>
             </div>
 

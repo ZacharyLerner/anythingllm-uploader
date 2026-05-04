@@ -306,6 +306,7 @@ body {
 .btn-delete-bulk:disabled { opacity: 0.6; cursor: not-allowed; }
 
 .btn-delete-bulk .btn-spinner,
+.btn-scrape-submit .btn-spinner,
 .btn-scrape-process .btn-spinner {
     display: inline-block;
     width: 13px; height: 13px;
@@ -852,6 +853,54 @@ body {
 }
 
 /* Primary scrape action button — gold */
+.btn-scrape-submit {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    background-color: var(--uri-gold);
+    color: var(--uri-blue);
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    font-size: 13px;
+    font-weight: 700;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background-color 0.15s, box-shadow 0.15s, opacity 0.15s;
+    box-shadow: 0 2px 8px rgba(208,166,39,0.35);
+    letter-spacing: 0.2px;
+}
+
+.btn-scrape-submit:hover:not(:disabled) {
+    background-color: var(--uri-gold-dark);
+    box-shadow: 0 3px 12px rgba(208,166,39,0.45);
+}
+
+.btn-scrape-submit:disabled { opacity: 0.4; cursor: not-allowed; box-shadow: none; }
+
+.btn-scrape-cancel {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    color: var(--gray-mid);
+    border: 1px solid var(--border);
+    padding: 6px 12px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s, background-color 0.15s;
+}
+
+.btn-scrape-cancel:hover {
+    color: var(--uri-blue);
+    border-color: var(--uri-blue-mid);
+    background-color: var(--gray-light);
+}
+
 .btn-scrape-process {
     display: flex;
     align-items: center;

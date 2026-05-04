@@ -457,22 +457,565 @@ bulkDeleteBtn.addEventListener("click", async () => {
     deleteOverlay.classList.remove("visible");
 });
 
-/* ========== Scrape Section: Checkboxes & Bulk Delete ========== */
+/* ==========================================================================
+   WEB SCRAPING
+   ========================================================================== */
+
+const scrapeArea = document.getElementById("scrapeArea");
+const scrapeBtn = document.getElementById("scrapeBtn");
+const scrapeUrlInput = document.getElementById("scrapeUrl");
+const scrapeCategoryInput = document.getElementById("scrapeCategory");
+const scrapeFormExtras = document.getElementById("scrapeFormExtras");
+const scrapeAdvancedToggle = document.getElementById("scrapeAdvancedToggle");
+const scrapeAdvancedPanel = document.getElementById("scrapeAdvanced");
+const scrapeMaxPagesInput = document.getElementById("scrapeMaxPages");
+const scrapeStayOnDomainCb = document.getElementById("scrapeStayOnDomain");
+
+const scrapeDiscovery = document.getElementById("scrapeDiscovery");
+const scrapeDiscoveryCount = document.getElementById("scrapeDiscoveryCount");
+const scrapeUrlList = document.getElementById("scrapeUrlList");
+const scrapeSelectAllCb = document.getElementById("scrapeSelectAllCb");
+const scrapeProcessBtn = document.getElementById("scrapeProcessBtn");
+const scrapeCancelBtn = document.getElementById("scrapeCancelBtn");
+
+const scrapeFilterBar = document.getElementById("scrapeFilterBar");
 
 const scrapeFileDisplay = document.getElementById("scrapeFileDisplay");
+const scrapeCounter = document.getElementById("scrapeCounter");
+const scrapeFilesSelectAllCb = document.getElementById("scrapeFilesSelectAllCb");
 const scrapeBulkActions = document.getElementById("scrapeBulkActions");
 const scrapeSelectedCountEl = document.getElementById("scrapeSelectedCount");
-const scrapeFilesSelectAllCb = document.getElementById("scrapeFilesSelectAllCb");
 const scrapeBulkDeleteBtn = document.getElementById("scrapeBulkDeleteBtn");
+const scrapeSortSelect = document.getElementById("scrapeSortSelect");
 
-let scrapeCheckboxes = scrapeFileDisplay
-    ? Array.from(scrapeFileDisplay.querySelectorAll(".file-checkbox"))
-    : [];
+const discoverUrl = scrapeArea.dataset.discoverUrl;
+const processUrl = scrapeArea.dataset.processUrl;
+
+let discoveredUrls = [];
+let selectedScope = null;   // 'single' | 'links' | 'prefix'
+let selectedDepth = 1;      // 1 | 2 | 3 (used when scope === 'links')
+
+// Escape HTML to prevent XSS
+function escHtml(str) {
+    const d = document.createElement("div");
+    d.textContent = str;
+    return d.innerHTML;
+}
+
+/* ---------- Form extras visibility ---------- */
+
+function updateFormVisibility() {
+    const hasUrl = scrapeUrlInput.value.trim().length > 0;
+    const hasCat = scrapeCategoryInput.value.trim().length > 0;
+    scrapeFormExtras.classList.toggle("visible", hasUrl && hasCat);
+}
+
+/* ---------- Category dropdown ---------- */
+
+const categoryDropdown = document.getElementById("scrapeCategoryDropdown");
+const existingCategories = (scrapeCategoryInput.dataset.categories || "")
+    .split(",").map(s => s.trim()).filter(Boolean);
+
+function renderCategoryDropdown(filter) {
+    const q = filter.toLowerCase();
+    const matches = existingCategories.filter(c => c.toLowerCase().includes(q));
+    if (matches.length === 0) {
+        categoryDropdown.classList.remove("open");
+        return;
+    }
+    categoryDropdown.innerHTML = matches.map(c =>
+        `<li class="scrape-category-option" data-value="${escHtml(c)}">${escHtml(c)}</li>`
+    ).join("");
+    categoryDropdown.classList.add("open");
+}
+
+scrapeCategoryInput.addEventListener("focus", () => {
+    renderCategoryDropdown(scrapeCategoryInput.value);
+});
+
+scrapeCategoryInput.addEventListener("input", () => {
+    renderCategoryDropdown(scrapeCategoryInput.value);
+});
+
+categoryDropdown.addEventListener("mousedown", (e) => {
+    const option = e.target.closest(".scrape-category-option");
+    if (!option) return;
+    e.preventDefault(); // prevent blur firing before click
+    scrapeCategoryInput.value = option.dataset.value;
+    categoryDropdown.classList.remove("open");
+    updateFormVisibility();
+    updatePreview();
+});
+
+scrapeCategoryInput.addEventListener("blur", () => {
+    categoryDropdown.classList.remove("open");
+});
+
+// Close on Escape
+scrapeCategoryInput.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") categoryDropdown.classList.remove("open");
+});
+
+/* ---------- Advanced Options Toggle ---------- */
+
+scrapeAdvancedToggle.addEventListener("click", () => {
+    scrapeAdvancedToggle.classList.toggle("open");
+    scrapeAdvancedPanel.classList.toggle("open");
+});
+
+/* ---------- Scope Card Selection ---------- */
+
+const scopeCards = document.getElementById("scopeCards");
+const scrapeDepthPanel = document.getElementById("scrapeDepthPanel");
+
+scopeCards.addEventListener("click", (e) => {
+    const card = e.target.closest(".scrape-scope-card");
+    if (!card) return;
+    scopeCards.querySelectorAll(".scrape-scope-card").forEach((c) => c.classList.remove("active"));
+    card.classList.add("active");
+    selectedScope = card.dataset.scope;
+    scrapeDepthPanel.classList.toggle("visible", selectedScope === "links");
+    updatePreview();
+    updateSubmitBtn();
+});
+
+/* ---------- Depth Button Selection ---------- */
+
+const scrapeDepthBtns = document.getElementById("scrapeDepthBtns");
+
+scrapeDepthBtns.addEventListener("click", (e) => {
+    const btn = e.target.closest(".scrape-depth-btn");
+    if (!btn) return;
+    scrapeDepthBtns.querySelectorAll(".scrape-depth-btn").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    selectedDepth = parseInt(btn.dataset.depth, 10);
+    updatePreview();
+});
+
+/* ---------- Live Preview ---------- */
+
+const scrapePreviewDot = document.getElementById("scrapePreviewDot");
+const scrapePreviewText = document.getElementById("scrapePreviewText");
+
+function updatePreview() {
+    const url = scrapeUrlInput.value.trim();
+    const category = scrapeCategoryInput.value.trim();
+    const maxVal = parseInt(scrapeMaxPagesInput.value, 10);
+    const maxLabel = maxVal === 0 ? "no limit" : maxVal;
+    const stayOnDomain = scrapeStayOnDomainCb.checked;
+
+    const catSuffix = category ? ` under ${category}` : "";
+    const domainSuffix = stayOnDomain ? ", staying on this domain" : "";
+
+    if (!url && !selectedScope) {
+        scrapePreviewDot.className = "scrape-preview-dot";
+        scrapePreviewText.textContent = "Enter a URL and choose a scope to get started.";
+        return;
+    }
+    if (!selectedScope) {
+        scrapePreviewDot.className = "scrape-preview-dot";
+        scrapePreviewText.textContent = "Choose a scope above.";
+        return;
+    }
+    if (!url) {
+        scrapePreviewDot.className = "scrape-preview-dot";
+        scrapePreviewText.textContent = "Enter a URL above.";
+        return;
+    }
+
+    scrapePreviewDot.className = "scrape-preview-dot active";
+
+    if (selectedScope === "single") {
+        const catPart = category ? ` under ${category}` : "";
+        scrapePreviewText.textContent = `Will add 1 page${catPart}: ${url}`;
+    } else if (selectedScope === "links") {
+        const n = selectedDepth;
+        scrapePreviewText.textContent =
+            `Will follow links ${n} level${n !== 1 ? "s" : ""} deep from this page (up to ${maxLabel} pages)${catSuffix}${domainSuffix}.`;
+    } else if (selectedScope === "prefix") {
+        let pathname = "/";
+        try {
+            let p = new URL(url).pathname || "/";
+            if (!p.endsWith("/")) p = p.replace(/\/[^/]*$/, "/") || "/";
+            pathname = p;
+        } catch (_) {}
+        scrapePreviewText.textContent =
+            `Will add all pages under ${pathname} (up to ${maxLabel} pages)${catSuffix}${domainSuffix}.`;
+    }
+}
+
+function updateSubmitBtn() {
+    const hasUrl = scrapeUrlInput.value.trim().length > 0;
+    scrapeBtn.disabled = !(hasUrl && selectedScope);
+}
+
+// Re-run preview + enable state on any relevant field change
+scrapeUrlInput.addEventListener("input", () => { updateFormVisibility(); updatePreview(); updateSubmitBtn(); });
+scrapeCategoryInput.addEventListener("input", () => { updateFormVisibility(); updatePreview(); });
+scrapeMaxPagesInput.addEventListener("input", updatePreview);
+scrapeStayOnDomainCb.addEventListener("change", updatePreview);
+
+/* ---------- Form Reset ---------- */
+
+function resetScrapeForm() {
+    scrapeUrlInput.value = "";
+    scrapeCategoryInput.value = "";
+    selectedScope = null;
+    selectedDepth = 1;
+    scrapeFormExtras.classList.remove("visible");
+    scopeCards.querySelectorAll(".scrape-scope-card").forEach((c) => c.classList.remove("active"));
+    scrapeDepthPanel.classList.remove("visible");
+    scrapeDepthBtns.querySelectorAll(".scrape-depth-btn").forEach((b, i) => {
+        b.classList.toggle("active", i === 0);
+    });
+    scrapeBtn.textContent = "Discover pages";
+    scrapeBtn.disabled = true;
+    updatePreview();
+}
+
+/* ---------- Phase 1: Discover Pages ---------- */
+
+scrapeBtn.addEventListener("click", async () => {
+    const baseUrl = scrapeUrlInput.value.trim();
+
+    // Hide any previous discovery results
+    scrapeDiscovery.classList.remove("visible");
+    scrapeUrlList.innerHTML = "";
+    discoveredUrls = [];
+
+    // Show loading state
+    scrapeBtn.disabled = true;
+    scrapeBtn.innerHTML = '<span class="btn-spinner"></span> Searching&hellip;';
+
+    const mode = selectedScope === "prefix" ? "prefix" : "depth";
+    const max_depth = selectedScope === "links" ? selectedDepth : (selectedScope === "single" ? 0 : 1);
+
+    const maxPagesVal = parseInt(scrapeMaxPagesInput.value, 10);
+    const payload = {
+        base_url: baseUrl,
+        mode,
+        max_depth,
+        max_pages: maxPagesVal === 0 ? 10000 : maxPagesVal,
+        allow_offsite: !scrapeStayOnDomainCb.checked,
+    };
+
+    try {
+        const res = await fetch(discoverUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+        });
+
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.detail || `Discovery failed (${res.status})`);
+        }
+
+        const data = await res.json();
+        discoveredUrls = data.urls || [];
+        const blockedUrls = data.blocked || [];
+
+        if (discoveredUrls.length === 0 && blockedUrls.length === 0) {
+            scrapeDiscoveryCount.textContent = "No pages found";
+            scrapeUrlList.innerHTML = '<div class="scrape-url-empty">No downloadable pages were found at this URL.</div>';
+            scrapeProcessBtn.style.display = "none";
+            scrapeDiscovery.classList.add("visible");
+        } else {
+            renderDiscoveredUrls(blockedUrls);
+            scrapeDiscovery.classList.add("visible");
+        }
+    } catch (err) {
+        console.error("Scrape discovery error:", err);
+        alert("Failed to find pages: " + err.message);
+    } finally {
+        scrapeBtn.disabled = false;
+        scrapeBtn.textContent = "Discover pages";
+    }
+});
+
+function renderDiscoveredUrls(blockedUrls = []) {
+    scrapeUrlList.innerHTML = "";
+    scrapeSelectAllCb.checked = true;
+    scrapeProcessBtn.style.display = discoveredUrls.length > 0 ? "" : "none";
+
+    discoveredUrls.forEach((url, i) => {
+        const item = document.createElement("div");
+        item.className = "scrape-url-item";
+        item.innerHTML = `
+            <input type="checkbox" class="scrape-url-cb" data-index="${i}" checked>
+            <span class="url-text" title="${escHtml(url)}">${escHtml(url)}</span>
+        `;
+        scrapeUrlList.appendChild(item);
+    });
+
+    if (blockedUrls.length > 0) {
+        const divider = document.createElement("div");
+        divider.className = "scrape-url-blocked-header";
+        divider.innerHTML = `
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+            ${blockedUrls.length} page${blockedUrls.length !== 1 ? "s" : ""} blocked by website host
+        `;
+        scrapeUrlList.appendChild(divider);
+
+        blockedUrls.forEach((url) => {
+            const item = document.createElement("div");
+            item.className = "scrape-url-item scrape-url-item--blocked";
+            item.innerHTML = `
+                <span class="url-text" title="${escHtml(url)}">${escHtml(url)}</span>
+            `;
+            scrapeUrlList.appendChild(item);
+        });
+    }
+
+    updateDiscoveryCount();
+
+    // Attach checkbox handlers
+    scrapeUrlList.querySelectorAll(".scrape-url-cb").forEach((cb) => {
+        cb.addEventListener("change", updateDiscoveryCount);
+    });
+}
+
+function updateDiscoveryCount() {
+    const cbs = scrapeUrlList.querySelectorAll(".scrape-url-cb");
+    const checkedCount = Array.from(cbs).filter((cb) => cb.checked).length;
+    const total = discoveredUrls.length;
+    scrapeDiscoveryCount.textContent = `Found ${total} page${total !== 1 ? "s" : ""}`;
+    scrapeProcessBtn.textContent = `Add to knowledge base (${checkedCount})`;
+    scrapeProcessBtn.disabled = checkedCount === 0;
+
+    // Update select-all state
+    if (checkedCount === 0) {
+        scrapeSelectAllCb.checked = false;
+        scrapeSelectAllCb.indeterminate = false;
+    } else if (checkedCount === cbs.length) {
+        scrapeSelectAllCb.checked = true;
+        scrapeSelectAllCb.indeterminate = false;
+    } else {
+        scrapeSelectAllCb.checked = false;
+        scrapeSelectAllCb.indeterminate = true;
+    }
+}
+
+// Select all / deselect all in discovery
+scrapeSelectAllCb.addEventListener("change", () => {
+    const checked = scrapeSelectAllCb.checked;
+    scrapeUrlList.querySelectorAll(".scrape-url-cb").forEach((cb) => {
+        cb.checked = checked;
+    });
+    updateDiscoveryCount();
+});
+
+// Cancel discovery — dismiss the URL list
+scrapeCancelBtn.addEventListener("click", () => {
+    scrapeDiscovery.classList.remove("visible");
+    discoveredUrls = [];
+    scrapeUrlList.innerHTML = "";
+});
+
+/* ---------- Phase 2: Process Selected URLs via SSE ---------- */
+
+scrapeProcessBtn.addEventListener("click", async () => {
+    const cbs = scrapeUrlList.querySelectorAll(".scrape-url-cb:checked");
+    const selectedUrls = Array.from(cbs).map((cb) => discoveredUrls[parseInt(cb.dataset.index)]);
+
+    if (selectedUrls.length === 0) return;
+
+    const category = scrapeCategoryInput.value.trim() || "default";
+
+    isScraping = true;
+    scrapeProcessBtn.disabled = true;
+    scrapeProcessBtn.textContent = "Adding\u2026";
+    scrapeBtn.disabled = true;
+
+    const totalUrls = selectedUrls.length;
+    let completedCount = 0;
+    let failedCount = 0;
+
+    const rows = {};
+    const steps = { fetching: 33, converted: 66, done: 100 };
+    const statusLabels = {
+        fetching: "Downloading page...",
+        converted: "Processing content...",
+        done: "Complete",
+    };
+
+    function updateScrapeCounter() {
+        let text = `Downloading ${totalUrls} page${totalUrls > 1 ? "s" : ""} \u2014 ${completedCount}/${totalUrls} complete`;
+        if (failedCount > 0) text += ` (${failedCount} failed)`;
+        scrapeCounter.textContent = text;
+    }
+
+    updateScrapeCounter();
+
+    // Insert in-progress rows at top of scrape file display
+    for (const url of selectedUrls) {
+        const row = document.createElement("div");
+        row.className = "file_card scraping";
+        row.innerHTML = `
+            <span class="ext-badge ext-web">WEB</span>
+            <div class="file-info">
+                <div class="filename">${escHtml(url)}</div>
+                <div class="date">Waiting...</div>
+            </div>
+            <div class="upload-indicator">
+                <div class="progress-bar-track">
+                    <div class="progress-bar-fill"></div>
+                </div>
+                <span class="progress-label">0%</span>
+            </div>
+        `;
+        scrapeFileDisplay.prepend(row);
+        rows[url] = row;
+    }
+
+    // Scroll to see progress
+    const scrapeBody = scrapeFileDisplay.closest(".section-body");
+    if (scrapeBody) scrapeBody.scrollTop = 0;
+
+    // SSE fetch
+    try {
+        const res = await fetch(processUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ urls: selectedUrls, category: category }),
+        });
+
+        if (!res.ok) {
+            throw new Error(`Download request failed (${res.status})`);
+        }
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n");
+            buffer = lines.pop();
+
+            for (const line of lines) {
+                if (!line.startsWith("data: ")) continue;
+                const payload = line.slice(6).trim();
+                if (!payload) continue;
+
+                if (payload === "[DONE]") {
+                    let summary = `${completedCount} page${completedCount !== 1 ? "s" : ""} added`;
+                    if (failedCount > 0) summary += `, ${failedCount} failed`;
+                    scrapeCounter.textContent = summary;
+                    setTimeout(() => { scrapeCounter.textContent = ""; }, 3000);
+
+                    // Collapse the discovery panel
+                    scrapeDiscovery.classList.remove("visible");
+                    rebuildScrapeCheckboxes();
+                    refreshScrapeFilterBar();
+
+                    isScraping = false;
+                    resetScrapeForm();
+                    scrapeProcessBtn.disabled = false;
+                    scrapeProcessBtn.textContent = "Add to knowledge base";
+                    return;
+                }
+
+                try {
+                    const event = JSON.parse(payload);
+                    const row = rows[event.url];
+                    if (!row) continue;
+
+                    if (event.status === "error") {
+                        row.classList.remove("scraping");
+                        row.classList.add("scrape-error");
+                        row.querySelector(".file-info .date").textContent = event.message || "Download failed";
+                        const indicator = row.querySelector(".upload-indicator");
+                        if (indicator) indicator.remove();
+                        failedCount++;
+                        updateScrapeCounter();
+                    } else if (event.status === "done") {
+                        completedCount++;
+                        updateScrapeCounter();
+                        transformToCompletedScrape(row, event);
+                    } else {
+                        const fill = row.querySelector(".progress-bar-fill");
+                        const label = row.querySelector(".progress-label");
+                        const dateEl = row.querySelector(".file-info .date");
+                        const pct = steps[event.status] || 0;
+
+                        fill.style.width = pct + "%";
+                        label.textContent = pct + "%";
+                        dateEl.textContent = statusLabels[event.status] || event.status;
+                    }
+                } catch (e) {
+                    console.warn("Skipping unparseable scrape payload:", payload);
+                }
+            }
+        }
+    } catch (err) {
+        console.error("Scrape processing error:", err);
+        // Mark remaining rows as errors
+        for (const [url, row] of Object.entries(rows)) {
+            if (row.classList.contains("scraping")) {
+                row.classList.remove("scraping");
+                row.classList.add("scrape-error");
+                row.querySelector(".file-info .date").textContent = "Download failed";
+                const indicator = row.querySelector(".upload-indicator");
+                if (indicator) indicator.remove();
+            }
+        }
+        scrapeCounter.textContent = "Download failed";
+        setTimeout(() => { scrapeCounter.textContent = ""; }, 3000);
+
+        isScraping = false;
+        scrapeBtn.disabled = false;
+        scrapeProcessBtn.disabled = false;
+        scrapeProcessBtn.textContent = "Add to knowledge base";
+    }
+});
+
+function transformToCompletedScrape(row, event) {
+    const fileId = event.location;
+    const displayName = event.name;
+    const sourceUrl = event.url;
+    const category = event.category || scrapeCategoryInput.value.trim() || "default";
+
+    const now = new Date();
+    const dateStr = now.toLocaleString("en-US", {
+        month: "short", day: "numeric", year: "numeric",
+        hour: "numeric", minute: "2-digit",
+    });
+
+    row.className = "file_card just-completed";
+    row.setAttribute("data-extension", ".html");
+    row.setAttribute("data-filename", displayName);
+    row.setAttribute("data-category", category);
+    row.setAttribute("data-source-url", sourceUrl);
+    row.setAttribute("data-date", now.toISOString());
+    row.innerHTML = `
+        <input type="checkbox" class="file-checkbox scrape-file-checkbox" data-id="${escHtml(fileId)}">
+        <span class="ext-badge ext-web">WEB</span>
+        <div class="file-info">
+            <div class="filename">${escHtml(displayName)}</div>
+            <div class="date source-url" title="${escHtml(sourceUrl)}">${escHtml(sourceUrl)}</div>
+        </div>
+        <button class="btn-delete" data-id="${escHtml(fileId)}">Delete</button>
+    `;
+
+    // Wire up delete
+    attachDeleteHandler(row.querySelector(".btn-delete"));
+
+    row.addEventListener("animationend", () => {
+        row.classList.remove("just-completed");
+    }, { once: true });
+}
+
+/* ---------- Downloaded Websites: Checkboxes & Selection ---------- */
+
+let scrapeCheckboxes = Array.from(scrapeFileDisplay.querySelectorAll(".scrape-file-checkbox"));
 let scrapeLastCheckedIndex = null;
 
 function rebuildScrapeCheckboxes() {
-    if (!scrapeFileDisplay) return;
-    scrapeCheckboxes = Array.from(scrapeFileDisplay.querySelectorAll(".file-checkbox"));
+    scrapeCheckboxes = Array.from(scrapeFileDisplay.querySelectorAll(".scrape-file-checkbox"));
     scrapeLastCheckedIndex = null;
 
     scrapeCheckboxes.forEach((cb, index) => {
@@ -509,27 +1052,23 @@ function updateScrapeSelection() {
         scrapeBulkActions.classList.remove("visible");
     }
 
-    syncScrapeSelectAllCheckbox();
+    syncScrapeSelectAll();
 }
 
-function syncScrapeSelectAllCheckbox() {
-    if (!scrapeFilesSelectAllCb) return;
-    const visible = scrapeCheckboxes.filter(
+function syncScrapeSelectAll() {
+    const visibleCheckboxes = scrapeCheckboxes.filter(
         (cb) => !cb.closest(".file_card").classList.contains("filtered-out")
     );
-
-    if (visible.length === 0) {
+    if (visibleCheckboxes.length === 0) {
         scrapeFilesSelectAllCb.checked = false;
         scrapeFilesSelectAllCb.indeterminate = false;
         return;
     }
-
-    const checkedCount = visible.filter((cb) => cb.checked).length;
-
+    const checkedCount = visibleCheckboxes.filter((cb) => cb.checked).length;
     if (checkedCount === 0) {
         scrapeFilesSelectAllCb.checked = false;
         scrapeFilesSelectAllCb.indeterminate = false;
-    } else if (checkedCount === visible.length) {
+    } else if (checkedCount === visibleCheckboxes.length) {
         scrapeFilesSelectAllCb.checked = true;
         scrapeFilesSelectAllCb.indeterminate = false;
     } else {
@@ -538,67 +1077,189 @@ function syncScrapeSelectAllCheckbox() {
     }
 }
 
-if (scrapeFilesSelectAllCb) {
-    scrapeFilesSelectAllCb.addEventListener("change", () => {
-        const isChecked = scrapeFilesSelectAllCb.checked;
-        scrapeCheckboxes.forEach((cb) => {
-            const card = cb.closest(".file_card");
-            if (!card.classList.contains("filtered-out")) {
-                cb.checked = isChecked;
+// Select-all for downloaded websites
+scrapeFilesSelectAllCb.addEventListener("change", () => {
+    const isChecked = scrapeFilesSelectAllCb.checked;
+    scrapeCheckboxes.forEach((cb) => {
+        const card = cb.closest(".file_card");
+        if (!card.classList.contains("filtered-out")) {
+            cb.checked = isChecked;
+        }
+    });
+    updateScrapeSelection();
+});
+
+// Initial setup
+rebuildScrapeCheckboxes();
+
+// Attach delete handlers to existing scraped file cards
+scrapeFileDisplay.querySelectorAll(".btn-delete").forEach(attachDeleteHandler);
+
+/* ---------- Downloaded Websites: Bulk Delete ---------- */
+
+scrapeBulkDeleteBtn.addEventListener("click", async () => {
+    const selected = scrapeCheckboxes.filter((cb) => cb.checked);
+    const fileIds = selected.map((cb) => cb.dataset.id);
+
+    if (!fileIds.length) return;
+
+    const count = fileIds.length;
+    if (!confirm(`Delete ${count} downloaded page${count > 1 ? "s" : ""}?`)) return;
+
+    scrapeBulkDeleteBtn.disabled = true;
+    scrapeBulkDeleteBtn.innerHTML = '<span class="btn-spinner"></span>Deleting...';
+
+    deleteOverlayTitle.textContent = `Deleting ${count} page${count > 1 ? "s" : ""}...`;
+    deleteOverlayMsg.textContent = count >= 5
+        ? "This may take a moment for larger selections."
+        : "Removing from workspace...";
+    deleteOverlay.classList.add("visible");
+
+    const res = await fetch("/delete-bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ file_ids: fileIds }),
+    });
+
+    if (res.ok) {
+        const result = await res.json();
+        const deletedIds = new Set(result.deleted || []);
+        selected.forEach((cb) => {
+            if (deletedIds.has(cb.dataset.id)) {
+                cb.closest(".file_card").remove();
             }
         });
+        rebuildScrapeCheckboxes();
         updateScrapeSelection();
+        refreshScrapeFilterBar();
+    } else {
+        alert("Failed to delete selected pages.");
+    }
+
+    scrapeBulkDeleteBtn.disabled = false;
+    scrapeBulkDeleteBtn.textContent = "Delete Selected";
+    deleteOverlay.classList.remove("visible");
+});
+
+/* ---------- Downloaded Websites: Category Filter Bar ---------- */
+
+let activeScrapeFilter = "all";
+
+function refreshScrapeFilterBar() {
+    const cards = Array.from(scrapeFileDisplay.querySelectorAll(".file_card:not(.scraping):not(.scrape-error)"));
+    const catSet = new Set();
+    cards.forEach((card) => {
+        const cat = card.dataset.category;
+        if (cat) catSet.add(cat);
     });
+
+    const cats = Array.from(catSet).sort();
+
+    scrapeFilterBar.innerHTML = "";
+
+    const allPill = document.createElement("button");
+    allPill.className = "filter-pill" + (activeScrapeFilter === "all" ? " active" : "");
+    allPill.dataset.cat = "all";
+    allPill.textContent = "All";
+    scrapeFilterBar.appendChild(allPill);
+
+    cats.forEach((cat) => {
+        const pill = document.createElement("button");
+        pill.className = "filter-pill" + (activeScrapeFilter === cat ? " active" : "");
+        pill.dataset.cat = cat;
+        pill.textContent = cat;
+        scrapeFilterBar.appendChild(pill);
+    });
+
+    attachScrapeFilterHandlers();
 }
 
-if (scrapeBulkDeleteBtn) {
-    scrapeBulkDeleteBtn.addEventListener("click", async () => {
-        const selected = scrapeCheckboxes.filter((cb) => cb.checked);
-        const fileIds = selected.map((cb) => cb.dataset.id);
-
-        if (!fileIds.length) return;
-
-        const count = fileIds.length;
-        const confirmMsg = `Delete ${count} document${count > 1 ? "s" : ""}?`;
-        if (!confirm(confirmMsg)) return;
-
-        scrapeBulkDeleteBtn.disabled = true;
-        scrapeBulkDeleteBtn.innerHTML = '<span class="btn-spinner"></span>Deleting...';
-
-        deleteOverlayTitle.textContent = `Deleting ${count} file${count > 1 ? "s" : ""}...`;
-        deleteOverlayMsg.textContent = count >= 5
-            ? "This may take a moment for larger selections."
-            : "Removing from workspace...";
-        deleteOverlay.classList.add("visible");
-
-        const res = await fetch("/delete-bulk", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ file_ids: fileIds }),
+function attachScrapeFilterHandlers() {
+    scrapeFilterBar.querySelectorAll(".filter-pill").forEach((pill) => {
+        pill.addEventListener("click", () => {
+            activeScrapeFilter = pill.dataset.cat;
+            scrapeFilterBar.querySelectorAll(".filter-pill").forEach((p) => p.classList.remove("active"));
+            pill.classList.add("active");
+            applyScrapeFilter();
         });
-
-        if (res.ok) {
-            const result = await res.json();
-            const deletedIds = new Set(result.deleted || []);
-            selected.forEach((cb) => {
-                if (deletedIds.has(cb.dataset.id)) {
-                    cb.closest(".file_card").remove();
-                }
-            });
-            rebuildScrapeCheckboxes();
-            updateScrapeSelection();
-        } else {
-            alert("Failed to delete selected documents.");
-        }
-
-        scrapeBulkDeleteBtn.disabled = false;
-        scrapeBulkDeleteBtn.textContent = "Delete Selected";
-        deleteOverlay.classList.remove("visible");
     });
 }
 
-// Initial setup for scrape section checkboxes
-rebuildScrapeCheckboxes();
+function applyScrapeFilter() {
+    const cards = scrapeFileDisplay.querySelectorAll(".file_card");
+    cards.forEach((card) => {
+        if (activeScrapeFilter === "all") {
+            card.classList.remove("filtered-out");
+        } else {
+            const cat = card.dataset.category || "";
+            if (cat === activeScrapeFilter) {
+                card.classList.remove("filtered-out");
+            } else {
+                card.classList.add("filtered-out");
+            }
+        }
+    });
+
+    // Uncheck anything that's now hidden
+    scrapeCheckboxes.forEach((cb) => {
+        const card = cb.closest(".file_card");
+        if (card.classList.contains("filtered-out")) {
+            cb.checked = false;
+        }
+    });
+
+    updateScrapeSelection();
+}
+
+// Initial attachment
+attachScrapeFilterHandlers();
+
+/* ---------- Downloaded Websites: Sort ---------- */
+
+scrapeSortSelect.addEventListener("change", () => {
+    applyScrapeSort(scrapeSortSelect.value);
+});
+
+function applyScrapeSort(mode) {
+    const cards = Array.from(scrapeFileDisplay.querySelectorAll(".file_card:not(.scraping):not(.scrape-error)"));
+
+    cards.sort((a, b) => {
+        switch (mode) {
+            case "az": {
+                const nameA = (a.dataset.filename || "").toLowerCase();
+                const nameB = (b.dataset.filename || "").toLowerCase();
+                return nameA.localeCompare(nameB);
+            }
+            case "za": {
+                const nameA = (a.dataset.filename || "").toLowerCase();
+                const nameB = (b.dataset.filename || "").toLowerCase();
+                return nameB.localeCompare(nameA);
+            }
+            case "newest": {
+                const dateA = a.dataset.date || "";
+                const dateB = b.dataset.date || "";
+                return dateB.localeCompare(dateA);
+            }
+            case "oldest": {
+                const dateA = a.dataset.date || "";
+                const dateB = b.dataset.date || "";
+                return dateA.localeCompare(dateB);
+            }
+            case "category": {
+                const catA = (a.dataset.category || "").toLowerCase();
+                const catB = (b.dataset.category || "").toLowerCase();
+                const cmp = catA.localeCompare(catB);
+                if (cmp !== 0) return cmp;
+                return (a.dataset.filename || "").toLowerCase().localeCompare((b.dataset.filename || "").toLowerCase());
+            }
+            default:
+                return 0;
+        }
+    });
+
+    cards.forEach((card) => scrapeFileDisplay.appendChild(card));
+    rebuildScrapeCheckboxes();
+}
 
 /* ========== Upload Search Bar ========== */
 

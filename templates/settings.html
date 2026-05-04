@@ -3,13 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" type="text/css" href="{{ url_for('static', path='css/main.css') }}?v=4">
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', path='css/main.css') }}?v=5">
     <title>{{ workspace.name }} - Settings</title>
     <style>
-        body {
-            padding: 0;
-            min-height: 100vh;
-        }
+        body { padding: 0; min-height: 100vh; }
 
         .settings-chrome {
             display: flex;
@@ -18,26 +15,24 @@
             overflow: hidden;
         }
 
-        /* ── Top bar ── */
+        /* Top bar — matches home page header */
         .settings-topbar {
             display: flex;
             align-items: center;
             gap: 16px;
-            padding: 12px 28px;
-            background: #fff;
-            border-bottom: 1px solid var(--gray-100);
+            padding: 18px 28px;
+            background: var(--uri-blue);
+            border-bottom: 3px solid var(--uri-gold);
             flex-shrink: 0;
+            box-shadow: 0 2px 8px rgba(0,33,71,0.22);
         }
 
-        .settings-topbar-title {
-            flex: 1;
-            min-width: 0;
-        }
+        .settings-topbar-title { flex: 1; min-width: 0; }
 
         .settings-topbar-title h1 {
-            font-size: 15px;
+            font-size: 20px;
             font-weight: 700;
-            color: var(--uri-blue);
+            color: #fff;
             margin: 0;
             white-space: nowrap;
             overflow: hidden;
@@ -45,154 +40,106 @@
         }
 
         .settings-topbar-title p {
-            font-size: 11px;
-            color: var(--gray-600);
-            margin: 1px 0 0;
+            font-size: 12px;
+            color: rgba(208,166,39,0.85);
+            margin: 2px 0 0;
+            letter-spacing: 0.2px;
         }
 
-        .btn-settings-save {
-            background-color: var(--uri-blue);
-            color: #fff;
-            border: none;
-            padding: 11px 32px;
-            border-radius: 8px;
-            font-size: 14px;
-            font-weight: 600;
-            font-family: inherit;
-            cursor: pointer;
-            white-space: nowrap;
-            transition: background-color 0.2s, box-shadow 0.2s;
-            box-shadow: 0 2px 8px rgba(0, 33, 71, 0.18);
-        }
-
-        .btn-settings-save:hover:not(:disabled) {
-            background-color: var(--uri-blue-light);
-            box-shadow: 0 4px 12px rgba(0, 33, 71, 0.22);
-        }
-
-        .btn-settings-save:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-        }
-
-        .prompt-footer {
-            display: flex;
-            justify-content: flex-end;
-            padding: 16px 0 0;
-            border-top: 1px solid var(--gray-100);
-            margin-top: 24px;
-        }
-
-        /* ── Scrollable body ── */
+        /* Scrollable body */
         .settings-body {
             flex: 1;
             overflow-y: auto;
             padding: 28px 32px;
             display: flex;
             flex-direction: column;
-            gap: 24px;
+            gap: 20px;
+            background: var(--bg);
         }
 
-        /* System prompt — tall and full width */
+        /* System Prompt */
         .setting-group-prompt label {
             display: block;
-            font-size: 12px;
-            font-weight: 600;
-            color: var(--gray-600);
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--uri-blue);
             text-transform: uppercase;
             letter-spacing: 0.5px;
-            margin-bottom: 8px;
+            margin-bottom: 7px;
         }
 
         .setting-group-prompt textarea {
             width: 100%;
-            flex: 1;
             min-height: 280px;
-            border: 1px solid var(--gray-100);
-            border-radius: 10px;
-            padding: 14px 16px;
-            font-size: 14px;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 12px 14px;
+            font-size: 13px;
             font-family: inherit;
             line-height: 1.65;
             resize: vertical;
             color: var(--uri-blue);
-            transition: border-color 0.2s, box-shadow 0.2s;
+            background: #fff;
+            transition: border-color 0.15s, box-shadow 0.15s;
         }
 
         .setting-group-prompt textarea:focus {
             outline: none;
-            border-color: var(--uri-blue-light);
-            box-shadow: 0 0 0 3px rgba(34, 119, 179, 0.1);
+            border-color: var(--uri-blue);
+            box-shadow: 0 0 0 2px rgba(0,33,71,0.1);
         }
 
-        /* Three controls in a row */
+        /* Three controls */
         .settings-controls-row {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-            gap: 16px;
+            gap: 14px;
             padding-top: 4px;
-            border-top: 1px solid var(--gray-100);
+            border-top: 1px solid var(--border);
         }
 
-        .settings-controls-row .setting-group {
-            margin-bottom: 0;
-        }
+        .settings-controls-row .setting-group { margin-bottom: 0; }
 
         .settings-controls-row .setting-group label {
-            font-size: 11px;
-            font-weight: 600;
-            color: var(--gray-600);
+            font-size: 10px;
+            font-weight: 700;
+            color: var(--uri-blue);
             text-transform: uppercase;
             letter-spacing: 0.5px;
-            margin-bottom: 8px;
+            margin-bottom: 7px;
             display: block;
         }
 
-        .settings-controls-row .setting-hint {
-            font-size: 10px;
-        }
+        .settings-controls-row .setting-hint { font-size: 10px; }
+        .settings-controls-row .setting-range-row { gap: 8px; }
+        .settings-controls-row .range-value-input { width: 44px; font-size: 12px; padding: 3px 4px; }
+        .settings-controls-row .setting-select { font-size: 12px; padding: 6px 8px; }
 
-        .settings-controls-row .setting-range-row {
-            gap: 8px;
-        }
 
-        .settings-controls-row .range-value-input {
-            width: 44px;
-            font-size: 12px;
-            padding: 3px 4px;
-        }
-
-        .settings-controls-row .setting-select {
-            font-size: 12px;
-            padding: 6px 8px;
-        }
     </style>
 </head>
 <body>
 <div class="settings-chrome">
 
-    <!-- Top bar -->
     <div class="settings-topbar">
         <a class="settings-back-link" href="/{{ workspace.id }}">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
             Back
         </a>
         <div class="settings-topbar-title">
             <h1>{{ workspace.name }}</h1>
             <p>Workspace Settings</p>
         </div>
+        <button class="btn-settings-save" id="settingsSaveBtn">Save Settings</button>
     </div>
 
-    <!-- Body -->
     <div class="settings-body" data-workspace="{{ workspace.id }}">
 
-        <!-- System prompt — primary focus -->
         <div class="setting-group-prompt">
             <label for="settingPrompt">System Prompt</label>
             <textarea id="settingPrompt" rows="10" placeholder="Loading settings..."></textarea>
         </div>
 
-        <!-- Three controls in a row -->
         <div class="settings-controls-row">
             <div class="setting-group">
                 <label for="settingTopN">Top N Results</label>
@@ -224,9 +171,7 @@
             </div>
         </div>
 
-        <div class="prompt-footer">
-            <button class="btn-settings-save" id="settingsSaveBtn">Save Settings</button>
-        </div>
+
 
     </div>
 </div>
@@ -256,6 +201,31 @@ tempInput.addEventListener("change", () => {
     tempInput.value = v; tempEl.value = v;
 });
 
+// Dirty-state tracking
+let isDirty = false;
+let isSaving = false;
+
+function markDirty() { isDirty = true; }
+function markClean() { isDirty = false; }
+
+window.addEventListener("beforeunload", e => {
+    if (isDirty && !isSaving) {
+        e.preventDefault();
+        e.returnValue = "";
+    }
+});
+
+// Back link — intercept if dirty
+document.querySelector(".settings-back-link").addEventListener("click", e => {
+    if (isDirty && !isSaving) {
+        e.preventDefault();
+        if (confirm("You have unsaved changes. Leave without saving?")) {
+            markClean();
+            window.location.href = e.currentTarget.href;
+        }
+    }
+});
+
 // Load settings
 const fields = [promptEl, topNEl, topNInput, tempEl, tempInput, simEl];
 fields.forEach(f => f.disabled = true);
@@ -276,12 +246,16 @@ fetch(`/api/v1/workspaces/${workspaceId}/settings`)
     .finally(() => {
         fields.forEach(f => f.disabled = false);
         promptEl.placeholder = "Enter a system prompt for this workspace...";
+        // Start tracking changes only after load completes
+        fields.forEach(f => f.addEventListener("input", markDirty));
+        fields.forEach(f => f.addEventListener("change", markDirty));
     });
 
 // Save
-saveBtn.addEventListener("click", async () => {
-    saveBtn.disabled = true;
-    saveBtn.textContent = "Saving...";
+async function doSave(btn) {
+    isSaving = true;
+    btn.disabled = true;
+    btn.textContent = "Saving...";
     try {
         const res = await fetch(`/api/v1/workspaces/${workspaceId}/settings`, {
             method: "POST",
@@ -294,22 +268,25 @@ saveBtn.addEventListener("click", async () => {
             }),
         });
         if (!res.ok) throw new Error(`${res.status}`);
-        saveBtn.textContent = "Saved!";
-        saveBtn.style.backgroundColor = "#22c55e";
-        setTimeout(() => {
-            window.location.href = `/${workspaceId}`;
-        }, 500);
+        markClean();
+        btn.textContent = "Saved!";
+        setTimeout(() => { window.location.href = `/${workspaceId}`; }, 500);
     } catch (err) {
         console.error(err);
-        saveBtn.textContent = "Save Failed";
-        saveBtn.style.backgroundColor = "#ef4444";
+        isSaving = false;
+        btn.textContent = "Save Failed";
+        btn.style.backgroundColor = "#b91c1c";
+        btn.style.color = "#fff";
         setTimeout(() => {
-            saveBtn.textContent = "Save Settings";
-            saveBtn.style.backgroundColor = "";
-            saveBtn.disabled = false;
+            btn.textContent = "Save Settings";
+            btn.style.backgroundColor = "";
+            btn.style.color = "";
+            btn.disabled = false;
         }, 2000);
     }
-});
+}
+
+saveBtn.addEventListener("click", () => doSave(saveBtn));
 </script>
 </body>
 </html>

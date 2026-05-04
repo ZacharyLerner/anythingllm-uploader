@@ -284,10 +284,16 @@ function attachDeleteHandler(btn) {
 
         if (res.ok) {
             const card = btn.closest(".file_card");
+            const isScrapeCard = card.closest("#scrapeFileDisplay") !== null;
             card.remove();
-            rebuildCheckboxes();
-            updateSelection();
-            refreshFilterBar();
+            if (isScrapeCard) {
+                rebuildScrapeCheckboxes();
+                updateScrapeSelection();
+            } else {
+                rebuildCheckboxes();
+                updateSelection();
+                refreshFilterBar();
+            }
         }
     });
 }
@@ -450,6 +456,149 @@ bulkDeleteBtn.addEventListener("click", async () => {
     bulkDeleteBtn.textContent = "Delete Selected";
     deleteOverlay.classList.remove("visible");
 });
+
+/* ========== Scrape Section: Checkboxes & Bulk Delete ========== */
+
+const scrapeFileDisplay = document.getElementById("scrapeFileDisplay");
+const scrapeBulkActions = document.getElementById("scrapeBulkActions");
+const scrapeSelectedCountEl = document.getElementById("scrapeSelectedCount");
+const scrapeFilesSelectAllCb = document.getElementById("scrapeFilesSelectAllCb");
+const scrapeBulkDeleteBtn = document.getElementById("scrapeBulkDeleteBtn");
+
+let scrapeCheckboxes = scrapeFileDisplay
+    ? Array.from(scrapeFileDisplay.querySelectorAll(".file-checkbox"))
+    : [];
+let scrapeLastCheckedIndex = null;
+
+function rebuildScrapeCheckboxes() {
+    if (!scrapeFileDisplay) return;
+    scrapeCheckboxes = Array.from(scrapeFileDisplay.querySelectorAll(".file-checkbox"));
+    scrapeLastCheckedIndex = null;
+
+    scrapeCheckboxes.forEach((cb, index) => {
+        const newCb = cb.cloneNode(true);
+        cb.parentNode.replaceChild(newCb, cb);
+        scrapeCheckboxes[index] = newCb;
+
+        newCb.addEventListener("click", (e) => {
+            if (e.shiftKey && scrapeLastCheckedIndex !== null) {
+                const start = Math.min(scrapeLastCheckedIndex, index);
+                const end = Math.max(scrapeLastCheckedIndex, index);
+                const checked = newCb.checked;
+                for (let i = start; i <= end; i++) {
+                    scrapeCheckboxes[i].checked = checked;
+                }
+            }
+            scrapeLastCheckedIndex = index;
+            updateScrapeSelection();
+        });
+    });
+}
+
+function updateScrapeSelection() {
+    const selected = scrapeCheckboxes.filter((cb) => cb.checked);
+
+    scrapeCheckboxes.forEach((cb) => {
+        cb.closest(".file_card").classList.toggle("selected", cb.checked);
+    });
+
+    if (selected.length > 0) {
+        scrapeBulkActions.classList.add("visible");
+        scrapeSelectedCountEl.textContent = selected.length;
+    } else {
+        scrapeBulkActions.classList.remove("visible");
+    }
+
+    syncScrapeSelectAllCheckbox();
+}
+
+function syncScrapeSelectAllCheckbox() {
+    if (!scrapeFilesSelectAllCb) return;
+    const visible = scrapeCheckboxes.filter(
+        (cb) => !cb.closest(".file_card").classList.contains("filtered-out")
+    );
+
+    if (visible.length === 0) {
+        scrapeFilesSelectAllCb.checked = false;
+        scrapeFilesSelectAllCb.indeterminate = false;
+        return;
+    }
+
+    const checkedCount = visible.filter((cb) => cb.checked).length;
+
+    if (checkedCount === 0) {
+        scrapeFilesSelectAllCb.checked = false;
+        scrapeFilesSelectAllCb.indeterminate = false;
+    } else if (checkedCount === visible.length) {
+        scrapeFilesSelectAllCb.checked = true;
+        scrapeFilesSelectAllCb.indeterminate = false;
+    } else {
+        scrapeFilesSelectAllCb.checked = false;
+        scrapeFilesSelectAllCb.indeterminate = true;
+    }
+}
+
+if (scrapeFilesSelectAllCb) {
+    scrapeFilesSelectAllCb.addEventListener("change", () => {
+        const isChecked = scrapeFilesSelectAllCb.checked;
+        scrapeCheckboxes.forEach((cb) => {
+            const card = cb.closest(".file_card");
+            if (!card.classList.contains("filtered-out")) {
+                cb.checked = isChecked;
+            }
+        });
+        updateScrapeSelection();
+    });
+}
+
+if (scrapeBulkDeleteBtn) {
+    scrapeBulkDeleteBtn.addEventListener("click", async () => {
+        const selected = scrapeCheckboxes.filter((cb) => cb.checked);
+        const fileIds = selected.map((cb) => cb.dataset.id);
+
+        if (!fileIds.length) return;
+
+        const count = fileIds.length;
+        const confirmMsg = `Delete ${count} document${count > 1 ? "s" : ""}?`;
+        if (!confirm(confirmMsg)) return;
+
+        scrapeBulkDeleteBtn.disabled = true;
+        scrapeBulkDeleteBtn.innerHTML = '<span class="btn-spinner"></span>Deleting...';
+
+        deleteOverlayTitle.textContent = `Deleting ${count} file${count > 1 ? "s" : ""}...`;
+        deleteOverlayMsg.textContent = count >= 5
+            ? "This may take a moment for larger selections."
+            : "Removing from workspace...";
+        deleteOverlay.classList.add("visible");
+
+        const res = await fetch("/delete-bulk", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ file_ids: fileIds }),
+        });
+
+        if (res.ok) {
+            const result = await res.json();
+            const deletedIds = new Set(result.deleted || []);
+            selected.forEach((cb) => {
+                if (deletedIds.has(cb.dataset.id)) {
+                    cb.closest(".file_card").remove();
+                }
+            });
+            rebuildScrapeCheckboxes();
+            updateScrapeSelection();
+        } else {
+            alert("Failed to delete selected documents.");
+        }
+
+        scrapeBulkDeleteBtn.disabled = false;
+        scrapeBulkDeleteBtn.textContent = "Delete Selected";
+        deleteOverlay.classList.remove("visible");
+    });
+}
+
+// Initial setup for scrape section checkboxes
+rebuildScrapeCheckboxes();
 
 /* ========== Upload Search Bar ========== */
 

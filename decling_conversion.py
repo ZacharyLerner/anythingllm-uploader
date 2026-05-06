@@ -1,3 +1,4 @@
+import re
 import requests
 from bs4 import BeautifulSoup
 
@@ -11,32 +12,37 @@ import time
 converter = DocumentConverter()
 
 _HEADERS = {"User-Agent": "KnowledgeBaseBot/1.0 (educational knowledge base indexer; respectful crawler)"}
+_NOISE_TAGS = ["header", "footer", "nav", "script", "style", "noscript", "aside", "form"]
+
 
 def scrape_website_md(url):
-    response = requests.get(url, headers=_HEADERS, timeout=15)
+    try:
+        response = requests.get(url, headers=_HEADERS, timeout=15)
+        response.raise_for_status()
+    except requests.exceptions.RequestException as e:
+        raise ValueError(f"Request failed: {e}") from e
 
-    # Treat non-200 responses as failures
-    if response.status_code != 200:
-        raise ValueError(f"HTTP {response.status_code}")
-
-    html_content = response.text
+    response.encoding = response.apparent_encoding
+    soup = BeautifulSoup(response.text, "html.parser")
 
     # If the page is essentially empty (JS redirect, login wall, etc.)
     # there is nothing to convert — bail early with a clear message.
-    soup = BeautifulSoup(html_content, "html.parser")
-    body_text = soup.get_text(strip=True)
-    if len(body_text) < 50:
+    if len(soup.get_text(strip=True)) < 50:
         raise ValueError("Page returned no usable content (may require login or redirect)")
 
-    for tag in soup.find_all(["header", "footer", "nav"]):
+    # Strip noise tags (header/footer/nav + scripts/styles/forms)
+    for tag in soup.find_all(_NOISE_TAGS):
         tag.extract()
 
+    # Strip loading spinners and breadcrumbs by id/class
+    for el in soup.find_all(id=re.compile(r"loader|spinner", re.I)):
+        el.extract()
+    for el in soup.find_all(class_=re.compile(r"loader|spinner|breadcrumb", re.I)):
+        el.extract()
+
     try:
-        result = converter.convert_string(
-            content=str(soup),
-            format=InputFormat.HTML,
-            name="page.html"
-        )
+        buf = BytesIO(str(soup).encode("utf-8"))
+        result = converter.convert(DocumentStream(name="page.html", stream=buf))
         md = result.document.export_to_markdown()
     except Exception as e:
         raise ValueError(f"Could not convert page content: {e}") from e
@@ -44,7 +50,23 @@ def scrape_website_md(url):
     if not md or not md.strip():
         raise ValueError("Page converted to empty content")
 
+    md = _clean_markdown(md)
+
     return md
+
+
+def _clean_markdown(md):
+    # Drop docling's empty image placeholder comments
+    md = re.sub(r"<!--\s*image\s*-->", "", md, flags=re.IGNORECASE)
+
+    # Drop leftover "Loading..." text from spinner divs
+    md = re.sub(r"^\s*Loading\.\.\.\s*$", "", md, flags=re.MULTILINE)
+
+    # Collapse 3+ consecutive blank lines into 2
+    md = re.sub(r"\n{3,}", "\n\n", md)
+
+    return md.strip()
+
 
 def convert_file(file_bytes, file_name):
     #start_time = time.time()

@@ -20,6 +20,8 @@ from anythingllm import (
     LLM_generate_new_workspace,
     LLM_delete_workspace,
 )
+from config import API_URL, HEADERS
+import requests as _requests
 from config import TEXT_EXTENSIONS, DEBUG_UPLOAD_DIR, MAX_UPLOAD_BYTES
 from database import Base, engine, get_db
 from decling_conversion import convert_file, scrape_website_md
@@ -367,7 +369,7 @@ async def scrape_discover(workspace_id: str, request: Request, db: Session = Dep
     return {"urls": urls, "count": len(urls), "blocked": blocked}
 
 
-# Process a single scraped URL: fetch HTML -> convert to MD -> upload to AnythingLLM
+# Process a single scraped URL: fetch HTML -> convert to MD -> upload to RAG backend
 async def process_scraped_url(url, category, workspace_id, queue):
     async with SEM:
         try:
@@ -486,7 +488,7 @@ async def upload_to_workspace(
     """
     Upload one or more files to a workspace.
 
-    Non-text files are converted to Markdown before being sent to AnythingLLM.
+    Non-text files are converted to Markdown before being sent to the RAG backend.
     Text files are uploaded as-is. Each file is registered in the local database
     with its original extension preserved.
 
@@ -536,13 +538,13 @@ async def upload_to_workspace(
         db.refresh(f)
     return saved_files
 
-# Creates a new workspace in AnythingLLM and the database 
+# Creates a new workspace in the RAG backend and the database
 @app.post("/api/v1/workspaces/new")
-async def create_new_workspace(workspace: WorkspaceCreate, request: Request,db: Session = Depends(get_db)):
+async def create_new_workspace(workspace: WorkspaceCreate, request: Request, db: Session = Depends(get_db)):
     """
-    Create a new workspace in AnythingLLM and the local database.
+    Create a new workspace in the RAG backend and the local database.
 
-    - **id**: unique workspace identifier
+    - **id**: desired workspace slug (used as a hint; the backend may generate its own slug)
     - **name**: display name for the workspace
     - **owners**: list of owner user IDs
 
@@ -551,20 +553,33 @@ async def create_new_workspace(workspace: WorkspaceCreate, request: Request,db: 
     existing = db.query(Workspace).filter(Workspace.id == workspace.id).first()
     if existing:
         raise HTTPException(status_code=409, detail="Workspace already exists")
-    elif (LLM_generate_new_workspace(workspace.id, workspace.name)):
-        db_workspace = Workspace(id=workspace.id, name=workspace.name, owners=workspace.owners)
-        db.add(db_workspace)
-        db.commit()
-        db.refresh(db_workspace)
-        return db_workspace
+
+    # Call the RAG backend directly so we can capture the returned slug
+    resp = _requests.post(
+        f"{API_URL}/workspace",
+        headers=HEADERS,
+        json={"name": workspace.name},
+    )
+    if resp.status_code != 200:
+        raise HTTPException(status_code=500, detail=f"Failed to create workspace in RAG backend: {resp.text}")
+
+    remote_ws = resp.json()
+    # Use the slug returned by the backend (it derives it from the name)
+    slug = remote_ws.get("slug") or workspace.id
+
+    db_workspace = Workspace(id=slug, name=workspace.name, owners=workspace.owners)
+    db.add(db_workspace)
+    db.commit()
+    db.refresh(db_workspace)
+    return db_workspace
     
 # Creates a new workspace in just the database
 @app.post("/api/v1/workspaces/db")
-async def create_new_workspace_DB_only(workspace: WorkspaceCreate, request: Request,db: Session = Depends(get_db)):
+async def create_new_workspace_DB_only(workspace: WorkspaceCreate, request: Request, db: Session = Depends(get_db)):
     """
-    Create a new workspace in the local database only (does not create it in AnythingLLM).
+    Create a new workspace in the local database only (does not create it in the RAG backend).
 
-    Use this endpoint when the workspace already exists in AnythingLLM and you only need
+    Use this endpoint when the workspace already exists in the RAG backend and you only need
     to register it in the local database.
 
     - **id**: unique workspace identifier
@@ -600,9 +615,9 @@ async def get_workspace_info(workspace_id: str, request: Request,db: Session = D
 @app.delete("/api/v1/workspaces/{workspace_id}")
 async def delete_workspace_by_id(workspace_id: str, db: Session = Depends(get_db)):
     """
-    Delete a workspace by its ID from both AnythingLLM and the local database.
+    Delete a workspace by its ID from both the RAG backend and the local database.
 
-    Raises **404** if the workspace does not exist, or **500** if deletion in AnythingLLM fails.
+    Raises **404** if the workspace does not exist, or **500** if deletion in the RAG backend fails.
     """
     workspace = db.query(Workspace).where(Workspace.id == workspace_id).first()
     if not workspace:

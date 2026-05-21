@@ -1,143 +1,143 @@
 import requests
 import logging
 from config import HEADERS, API_URL
-import time
-import io
 
 
-# Checks if a workspace exists by ID, return boolean
+# ---------------------------------------------------------------------------
+# Workspace existence check
+# ---------------------------------------------------------------------------
+
 def LLM_workspace_exists(workspace: str) -> bool:
+    """Return True if the workspace slug exists on the RAG backend."""
     response = requests.get(f"{API_URL}/workspace/{workspace}", headers=HEADERS)
     if response.status_code == 200:
-        data = response.json()
-        if data.get("workspace") == []:
-            return False
-        else:
-            return True
-    else:
-        print(response.status_code)
-        logging.error(
-            f"check on workspace {workspace} failed with error code {response.status_code}"
-        )
+        return True
+    if response.status_code == 404:
         return False
+    logging.error(
+        f"Workspace existence check for '{workspace}' failed: {response.status_code}"
+    )
+    return False
 
 
-# Uploads and embeds a document into a workspace
-def LLM_upload_document(uploaded_file, file_name, workspace: str):
+# ---------------------------------------------------------------------------
+# Document embedding
+# ---------------------------------------------------------------------------
+
+def LLM_upload_document(uploaded_file, file_name: str, workspace: str) -> str:
+    """
+    Upload *uploaded_file* (file-like) to the RAG backend and embed it into
+    *workspace*.  Returns the doc_id string that identifies the embedded
+    document (used as the file's primary key in the local DB).
+    """
     response = requests.post(
-        f"{API_URL}/document/upload",
+        f"{API_URL}/workspace/{workspace}/embed",
         headers=HEADERS,
         files={"file": (file_name, uploaded_file)},
-        data={"addToWorkspaces": workspace},
     )
-    end_time = time.time()
+    response.raise_for_status()
     data = response.json()
-    return data["documents"][0]["location"]
+    return data["doc_id"]
 
 
-def LLM_remove_document(workspace: str, location: str) -> bool:
-    # Step 1: Remove from workspace embeddings
-    resp = requests.post(
-        f"{API_URL}/workspace/{workspace}/update-embeddings",
-        headers=HEADERS,
-        json={"adds": [], "deletes": [location]},
-    )
-    if resp.status_code != 200:
-        print(f"Failed to remove embedding: {resp.text}")
-        return False
-
-    # Step 2: Delete from document storage
+def LLM_remove_document(workspace: str, doc_id: str) -> bool:
+    """Delete an embedded document from the workspace by its doc_id."""
     resp = requests.delete(
-        f"{API_URL}/system/remove-documents",
+        f"{API_URL}/workspace/{workspace}/embed/{doc_id}",
         headers=HEADERS,
-        json={"names": [location]},
     )
     if resp.status_code != 200:
-        print(f"Failed to remove document: {resp.text}")
+        logging.error(f"Failed to remove document '{doc_id}': {resp.text}")
         return False
-
     return True
 
+
+# ---------------------------------------------------------------------------
+# Workspace settings
+# ---------------------------------------------------------------------------
 
 def LLM_json_workspace_settings(workspace: str):
-    response = requests.get(
-        f"{API_URL}/workspace/{workspace}",
-        headers=HEADERS,
-    )
+    """
+    Fetch workspace settings from the RAG backend.
+    Returns a dict with keys: prompt, similarity_threshold, top_n, temperature.
+    Returns None on failure.
+    """
+    response = requests.get(f"{API_URL}/workspace/{workspace}", headers=HEADERS)
     if response.status_code != 200:
         logging.error(
-            f"Failed to fetch settings for workspace {workspace}: {response.status_code} {response.text}"
+            f"Failed to fetch settings for workspace '{workspace}': "
+            f"{response.status_code} {response.text}"
         )
         return None
 
-    data = response.json()
-    workspaces = data.get("workspace", [])
-    if not workspaces:
-        logging.error(f"Workspace {workspace} not found in AnythingLLM")
-        return None
-
-    ws = workspaces[0]
+    ws = response.json()
     return {
-        "prompt": ws.get("openAiPrompt"),
-        "similarity_threshold": ws.get("similarityThreshold", 0.25),
-        "top_n": ws.get("topN", 4),
-        "temperature": ws.get("openAiTemp", 0.7),
+        "prompt": ws.get("system_prompt", ""),
+        "similarity_threshold": ws.get("similarity_threshold", 0.5),
+        "top_n": ws.get("top_n", 5),
+        "temperature": ws.get("temperature", 0.7),
     }
 
 
-# Updates workspace settings via the AnythingLLM API
 def LLM_update_workspace_settings(workspace: str, settings: dict) -> bool:
+    """
+    Update mutable workspace settings via PUT /workspace/{slug}.
+    Accepted keys: prompt, similarity_threshold, top_n, temperature.
+    """
     payload = {}
     if "prompt" in settings:
-        payload["openAiPrompt"] = settings["prompt"]
+        payload["system_prompt"] = settings["prompt"]
     if "similarity_threshold" in settings:
-        payload["similarityThreshold"] = settings["similarity_threshold"]
+        payload["similarity_threshold"] = settings["similarity_threshold"]
     if "top_n" in settings:
-        payload["topN"] = settings["top_n"]
+        payload["top_n"] = settings["top_n"]
     if "temperature" in settings:
-        payload["openAiTemp"] = settings["temperature"]
+        payload["temperature"] = settings["temperature"]
 
-    response = requests.post(
-        f"{API_URL}/workspace/{workspace}/update",
+    response = requests.put(
+        f"{API_URL}/workspace/{workspace}",
         headers=HEADERS,
         json=payload,
     )
     if response.status_code != 200:
         logging.error(
-            f"Failed to update workspace {workspace}: {response.status_code} {response.text}"
+            f"Failed to update workspace '{workspace}': "
+            f"{response.status_code} {response.text}"
         )
         return False
     return True
 
-# create a new workspace in anythingLLM
-def LLM_generate_new_workspace(workspace_id: str, workspace_name: str):
-    # default options payload 
+
+# ---------------------------------------------------------------------------
+# Workspace lifecycle
+# ---------------------------------------------------------------------------
+
+def LLM_generate_new_workspace(workspace_id: str, workspace_name: str) -> bool:
+    """
+    Create a new workspace on the RAG backend.
+    *workspace_id* is used as the slug; *workspace_name* is the display name.
+    Returns True on success.
+    """
     payload = {
-        "name": workspace_id,
-        "chatMode": "query",
-        "topN": 5 
+        "name": workspace_name,
     }
     response = requests.post(
-        f"{API_URL}/workspace/new",
+        f"{API_URL}/workspace",
         headers=HEADERS,
         json=payload,
     )
     if response.status_code != 200:
-        logging.error(f"Failed to create workspace {workspace_name}: {response.status_code} {response.text}")
-    else:
-        payload = {
-            "name": workspace_name,
-        }
-        update_response = requests.post(
-            f"{API_URL}/workspace/{workspace_id}/update",
-            headers=HEADERS,
-            json=payload,
+        logging.error(
+            f"Failed to create workspace '{workspace_name}': "
+            f"{response.status_code} {response.text}"
         )
-        if update_response.status_code != 200:
-            logging.error(f"Failed to update workspace {workspace_name}: {response.status_code} {response.text}")
-            return False
+        return False
     return True
 
+
 def LLM_delete_workspace(workspace_id: str):
-    request = requests.delete(f"{API_URL}/workspace/{workspace_id}",headers=HEADERS,)
-    return request
+    """Delete a workspace from the RAG backend. Returns the requests.Response."""
+    return requests.delete(
+        f"{API_URL}/workspace/{workspace_id}",
+        headers=HEADERS,
+    )

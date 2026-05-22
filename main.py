@@ -17,7 +17,6 @@ from anythingllm import (
     LLM_remove_document,
     LLM_json_workspace_settings,
     LLM_update_workspace_settings,
-    LLM_generate_new_workspace,
     LLM_delete_workspace,
 )
 from config import API_URL, HEADERS
@@ -538,36 +537,26 @@ async def upload_to_workspace(
         db.refresh(f)
     return saved_files
 
-# Creates a new workspace in the RAG backend and the database
+# Creates a new workspace in the database only (workspace must already exist in AnythingLLM)
 @app.post("/api/v1/workspaces/new")
 async def create_new_workspace(workspace: WorkspaceCreate, request: Request, db: Session = Depends(get_db)):
     """
-    Create a new workspace in the RAG backend and the local database.
+    Register a workspace in the local database.
 
-    - **id**: desired workspace slug (used as a hint; the backend may generate its own slug)
+    Workspaces are created and managed externally in AnythingLLM. This endpoint
+    only records the workspace in the local database.
+
+    - **id**: the workspace slug as it exists in AnythingLLM
     - **name**: display name for the workspace
     - **owners**: list of owner user IDs
 
-    Raises **409** if a workspace with the given ID already exists.
+    Raises **409** if a workspace with the given ID already exists in the database.
     """
     existing = db.query(Workspace).filter(Workspace.id == workspace.id).first()
     if existing:
         raise HTTPException(status_code=409, detail="Workspace already exists")
 
-    # Call the RAG backend directly so we can capture the returned slug
-    resp = _requests.post(
-        f"{API_URL}/workspace",
-        headers=HEADERS,
-        json={"name": workspace.name},
-    )
-    if resp.status_code != 200:
-        raise HTTPException(status_code=500, detail=f"Failed to create workspace in RAG backend: {resp.text}")
-
-    remote_ws = resp.json()
-    # Use the slug returned by the backend (it derives it from the name)
-    slug = remote_ws.get("slug") or workspace.id
-
-    db_workspace = Workspace(id=slug, name=workspace.name, owners=workspace.owners)
+    db_workspace = Workspace(id=workspace.id, name=workspace.name, owners=workspace.owners)
     db.add(db_workspace)
     db.commit()
     db.refresh(db_workspace)

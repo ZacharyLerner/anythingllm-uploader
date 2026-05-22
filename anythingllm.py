@@ -112,29 +112,6 @@ def LLM_update_workspace_settings(workspace: str, settings: dict) -> bool:
 # Workspace lifecycle
 # ---------------------------------------------------------------------------
 
-def LLM_generate_new_workspace(workspace_id: str, workspace_name: str) -> bool:
-    """
-    Create a new workspace on the RAG backend.
-    *workspace_id* is used as the slug; *workspace_name* is the display name.
-    Returns True on success.
-    """
-    payload = {
-        "name": workspace_name,
-    }
-    response = requests.post(
-        f"{API_URL}/workspace",
-        headers=HEADERS,
-        json=payload,
-    )
-    if response.status_code != 200:
-        logging.error(
-            f"Failed to create workspace '{workspace_name}': "
-            f"{response.status_code} {response.text}"
-        )
-        return False
-    return True
-
-
 def LLM_delete_workspace(workspace_id: str):
     """Delete a workspace from the RAG backend. Returns the requests.Response."""
     return requests.delete(

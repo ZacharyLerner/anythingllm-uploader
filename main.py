@@ -26,7 +26,7 @@ from config import TEXT_EXTENSIONS, DEBUG_UPLOAD_DIR, MAX_UPLOAD_BYTES
 from database import Base, engine, get_db
 from decling_conversion import convert_file, scrape_website_md
 from models import Workspace, File as FileModel
-from schemas import FileResponse, FileCreate, WorkspaceCreate, WorkspaceResponse
+from schemas import FileResponse, FileCreate, WorkspaceCreate, WorkspaceResponse, WorkspaceUpdate
 from scraper import get_links_by_depth, get_links_by_prefix
 
 # DB Setup
@@ -610,6 +610,23 @@ async def get_workspace_info(workspace_id: str, request: Request,db: Session = D
     if not workspace:
         raise HTTPException(status_code=404, detail="Workspace not found")
     return workspace
+
+# Renames a workspace by workspace id
+@app.patch("/api/v1/workspaces/{workspace_id}")
+async def rename_workspace(workspace_id: str, body: WorkspaceUpdate, db: Session = Depends(get_db)):
+    """
+    Rename a workspace by its ID.
+
+    Raises **404** if no workspace with the given ID exists.
+    """
+    workspace = db.query(Workspace).where(Workspace.id == workspace_id).first()
+    if not workspace:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+    workspace.name = body.name
+    db.commit()
+    db.refresh(workspace)
+    return workspace
+
 
 # Deletes a workspace by workspaceID
 @app.delete("/api/v1/workspaces/{workspace_id}")

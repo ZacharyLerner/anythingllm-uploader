@@ -1,3 +1,4 @@
+import time
 import requests
 import logging
 from urllib.parse import quote
@@ -46,16 +47,28 @@ def LLM_remove_document(workspace: str, doc_id: str) -> bool:
 
     Returns True if the document was deleted or was already absent (404).
     Returns False only on unexpected errors.
+    Retries up to 3 times on transient failures with exponential backoff.
     """
-    resp = requests.delete(
-        f"{API_URL}/workspace/{workspace}/embed/{quote(doc_id, safe='')}",
-        headers=HEADERS,
-    )
-    if resp.ok or resp.status_code == 404:
-        # 2xx = deleted successfully; 404 = already gone — either way the
-        # document is not in AnythingLLM, so we can safely remove the DB record.
-        return True
-    logging.error(f"Failed to remove document '{doc_id}': {resp.status_code} {resp.text}")
+    url = f"{API_URL}/workspace/{workspace}/embed/{quote(doc_id, safe='')}"
+    for attempt in range(3):
+        try:
+            resp = requests.delete(url, headers=HEADERS, timeout=30)
+            if resp.ok or resp.status_code == 404:
+                # 2xx = deleted successfully; 404 = already gone — either way the
+                # document is not in AnythingLLM, so we can safely remove the DB record.
+                return True
+            logging.warning(
+                f"Delete attempt {attempt + 1}/3 for '{doc_id}' returned {resp.status_code}. "
+                f"{'Retrying...' if attempt < 2 else 'Giving up.'}"
+            )
+        except requests.exceptions.RequestException as exc:
+            logging.warning(
+                f"Delete attempt {attempt + 1}/3 for '{doc_id}' raised {exc}. "
+                f"{'Retrying...' if attempt < 2 else 'Giving up.'}"
+            )
+        if attempt < 2:
+            time.sleep(1.5 ** attempt)  # 1s, 1.5s between retries
+    logging.error(f"Failed to remove document '{doc_id}' after 3 attempts.")
     return False
 
 

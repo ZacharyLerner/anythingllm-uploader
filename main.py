@@ -49,6 +49,8 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Async Semaphore Value
 SEM = asyncio.Semaphore(10)
+# Separate semaphore for bulk deletes to avoid overwhelming the LLM backend
+DELETE_SEM = asyncio.Semaphore(5)
 
 
 # Web Endpoints
@@ -231,7 +233,7 @@ async def create_upload_files(
 
 # function for deleting a file asyncronsoly 
 async def _delete_file(file_id, workspace_id):
-    async with SEM:
+    async with DELETE_SEM:
         success = await asyncio.to_thread(LLM_remove_document, workspace_id, file_id)
         return file_id, success
 
@@ -510,7 +512,7 @@ async def upload_to_workspace(
                 detail=f"File '{f.filename}' is {size_mb:.1f} MB — exceeds {limit_mb:.0f} MB limit",
             )
 
-        file_extension = Path(f.filename).suffix
+        file_extension = Path(f.filename).suffix.lower()
         file_name = f.filename
 
         if file_extension not in TEXT_EXTENSIONS:
@@ -588,10 +590,10 @@ async def create_new_workspace_DB_only(workspace: WorkspaceCreate, request: Requ
         return db_workspace
 
 # Gets the workspace by workspace id
-@app.get("/api/v1/workspaces/{workspace_id}")
+@app.get("/api/v1/workspaces/{workspace_id}", response_model=WorkspaceResponse)
 async def get_workspace_info(workspace_id: str, request: Request,db: Session = Depends(get_db)):
     """
-    Retrieve a workspace by its ID.
+    Retrieve a workspace by its ID, including its associated files.
 
     Raises **404** if no workspace with the given ID exists.
     """

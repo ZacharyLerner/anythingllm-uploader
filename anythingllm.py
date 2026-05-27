@@ -1,5 +1,6 @@
 import requests
 import logging
+from urllib.parse import quote
 from config import HEADERS, API_URL
 
 
@@ -43,7 +44,7 @@ def LLM_upload_document(uploaded_file, file_name: str, workspace: str) -> str:
 def LLM_remove_document(workspace: str, doc_id: str) -> bool:
     """Delete an embedded document from the workspace by its doc_id."""
     resp = requests.delete(
-        f"{API_URL}/workspace/{workspace}/embed/{doc_id}",
+        f"{API_URL}/workspace/{workspace}/embed/{quote(doc_id, safe='')}",
         headers=HEADERS,
     )
     if resp.status_code != 200:

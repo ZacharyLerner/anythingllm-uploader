@@ -111,8 +111,8 @@ async def processes_file(content, fname, workspace_id, queue):
     async with SEM:
         try:
             await queue.put({"file": fname, "status": "uploaded"})
-            file_extension = Path(fname).suffix
-            original_ext = file_extension.lower()
+            file_extension = Path(fname).suffix.lower()
+            original_ext = file_extension
             file_name = fname
 
             if file_extension not in TEXT_EXTENSIONS:
@@ -264,6 +264,11 @@ async def delete_bulk_files(request: Request, db: Session = Depends(get_db)):
         f.id: f for f in db.query(FileModel).filter(FileModel.id.in_(file_ids)).all()
     }
 
+    print(f"[bulk-delete] received {len(file_ids)} id(s), {len(files)} found in DB")
+    if len(file_ids) != len(files):
+        missing = set(file_ids) - set(files)
+        print(f"[bulk-delete] {len(missing)} id(s) not in DB (will be skipped): {list(missing)[:5]}")
+
     results = await asyncio.gather(
         *[_delete_file(fid, files[fid].workspace_id) for fid in files],
         return_exceptions=True,
@@ -271,14 +276,17 @@ async def delete_bulk_files(request: Request, db: Session = Depends(get_db)):
     deleted = []
     for r in results:
         if isinstance(r, Exception):
-            print(f"Delete failed: {r}")
+            print(f"[bulk-delete] exception during delete: {r}")
             continue
         file_id, success = r
         if success:
             db.delete(files[file_id])
             deleted.append(file_id)
+        else:
+            print(f"[bulk-delete] LLM_remove_document returned False for {file_id!r}")
 
     db.commit()
+    print(f"[bulk-delete] done: {len(deleted)}/{len(files)} deleted successfully")
     return {"deleted": deleted}
 
 @app.get("/api/v1/workspaces/{workspace_id}/settings",include_in_schema=False)

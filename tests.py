@@ -54,9 +54,35 @@ Base.metadata.create_all(bind=_test_engine)
 # Constants
 # ---------------------------------------------------------------------------
 BACKEND = "http://10.140.10.101:3001"
-TEST_SLUG = "testing-hohhze1p3c7f0occ"   # exists on the real backend
+TEST_SLUG = "testing1-gpqbq4c79q7pholp"   # exists on the real backend
 
 from config import HEADERS  # noqa: E402  (loaded after dotenv)
+
+# ---------------------------------------------------------------------------
+# Early connectivity guard — fail immediately with a clear message if the
+# test workspace slug no longer exists on the backend, rather than letting
+# every upload/delete test fail with confusing 404 errors.
+# ---------------------------------------------------------------------------
+def _assert_backend_reachable():
+    try:
+        r = _req.get(f"{BACKEND}/workspace/{TEST_SLUG}", headers=HEADERS, timeout=5)
+    except Exception as exc:
+        raise RuntimeError(
+            f"Cannot reach LLM backend at {BACKEND}: {exc}"
+        ) from exc
+    if r.status_code == 404:
+        # Auto-discover available workspaces and surface them
+        try:
+            slugs = [w["slug"] for w in _req.get(f"{BACKEND}/workspaces", headers=HEADERS, timeout=5).json()]
+        except Exception:
+            slugs = ["(could not list workspaces)"]
+        raise RuntimeError(
+            f"TEST_SLUG {TEST_SLUG!r} not found on backend.\n"
+            f"Available workspaces: {slugs}\n"
+            f"Update TEST_SLUG in tests.py to match."
+        )
+
+_assert_backend_reachable()
 
 # ---------------------------------------------------------------------------
 # Shared helpers

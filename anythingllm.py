@@ -42,15 +42,21 @@ def LLM_upload_document(uploaded_file, file_name: str, workspace: str) -> str:
 
 
 def LLM_remove_document(workspace: str, doc_id: str) -> bool:
-    """Delete an embedded document from the workspace by its doc_id."""
+    """Delete an embedded document from the workspace by its doc_id.
+
+    Returns True if the document was deleted or was already absent (404).
+    Returns False only on unexpected errors.
+    """
     resp = requests.delete(
         f"{API_URL}/workspace/{workspace}/embed/{quote(doc_id, safe='')}",
         headers=HEADERS,
     )
-    if resp.status_code != 200:
-        logging.error(f"Failed to remove document '{doc_id}': {resp.text}")
-        return False
-    return True
+    if resp.ok or resp.status_code == 404:
+        # 2xx = deleted successfully; 404 = already gone — either way the
+        # document is not in AnythingLLM, so we can safely remove the DB record.
+        return True
+    logging.error(f"Failed to remove document '{doc_id}': {resp.status_code} {resp.text}")
+    return False
 
 
 # ---------------------------------------------------------------------------

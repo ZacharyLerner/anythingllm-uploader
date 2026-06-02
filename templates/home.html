@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" type="text/css" href="{{ url_for('static', path='css/main.css') }}?v=5">
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', path='css/main.css') }}?v=7">
     <title>{{ workspace.name }} - Documents</title>
 </head>
 <body>
@@ -115,13 +115,13 @@
         </div>
 
         <!-- ================================================================
-             SECTION 2: Website Scraping
+             SECTION 2: Website Scraping — Add a New Job
              ================================================================ -->
         <div class="workflow-panel workflow-scrape">
             <div class="workflow-label">
                 <div class="workflow-label-text">
                     <h2 class="workflow-title">Add from the Web</h2>
-                    <p class="workflow-desc">Crawl and download web pages into this workspace</p>
+                    <p class="workflow-desc">Configure a website to scrape and add to this workspace</p>
                 </div>
                 <button class="btn-collapse" id="scrapeCollapseBtn" title="Collapse" aria-expanded="true">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
@@ -132,7 +132,7 @@
             <!-- Scrape Form -->
             <div class="scrape-area" id="scrapeArea"
                  data-discover-url="/{{ workspace.id }}/scrape/discover"
-                 data-process-url="/{{ workspace.id }}/scrape/process">
+                 data-jobs-url="/{{ workspace.id }}/scrape/jobs">
                 <div class="scrape-form">
                     <div class="scrape-form-main">
                         <div class="scrape-field scrape-field-url">
@@ -140,12 +140,8 @@
                             <input type="url" id="scrapeUrl" placeholder="https://example.com/docs/">
                         </div>
                         <div class="scrape-field scrape-field-category">
-                            <label for="scrapeCategory">Category Name</label>
-                            <div class="scrape-category-wrap">
-                                <input type="text" id="scrapeCategory" placeholder="e.g. IT_Services" autocomplete="off"
-                                       data-categories="{{ scrape_categories | join(',') }}">
-                                <ul class="scrape-category-dropdown" id="scrapeCategoryDropdown"></ul>
-                            </div>
+                            <label for="scrapeJobName">Job Name</label>
+                            <input type="text" id="scrapeJobName" placeholder="e.g. IT Services Docs" autocomplete="off">
                         </div>
                     </div>
 
@@ -251,67 +247,129 @@
                         </div>
                     </div>
                     <div class="scrape-url-list" id="scrapeUrlList"></div>
-                    <button class="btn-scrape-process" id="scrapeProcessBtn">Add to knowledge base</button>
-                </div>
-            </div>
 
-            <!-- Scrape Search -->
-            <div class="search-bar-wrap">
-                <input type="search" id="scrapeSearchBar" class="file-search-bar" placeholder="Search websites...">
-            </div>
-
-            <!-- Scrape Category Filter -->
-            <div class="filter-bar" id="scrapeFilterBar">
-                <button class="filter-pill active" data-cat="all">All</button>
-                {% for cat in scrape_categories %}
-                <button class="filter-pill" data-cat="{{ cat }}">{{ cat }}</button>
-                {% endfor %}
-            </div>
-
-            <!-- Downloaded Websites -->
-            <div class="section scraped-files-section" id="scrapedFilesSection">
-                <div class="section-header">
-                    <div class="section-header-left">
-                        <label class="select-all-wrap" title="Select all">
-                            <input type="checkbox" id="scrapeFilesSelectAllCb">
-                        </label>
-                        <h2>Downloaded Websites</h2>
-                        <span class="upload-counter" id="scrapeCounter"></span>
-                    </div>
-                    <div class="section-header-right">
-                        <select class="sort-select" id="scrapeSortSelect">
-                            <option value="newest">Newest First</option>
-                            <option value="oldest">Oldest First</option>
-                            <option value="az">A &rarr; Z</option>
-                            <option value="za">Z &rarr; A</option>
-                            <option value="category">By Category</option>
-                        </select>
-                    </div>
-                </div>
-                <div class="bulk-actions" id="scrapeBulkActions">
-                    <span><strong id="scrapeSelectedCount">0</strong> selected</span>
-                    <button class="btn-delete-bulk" id="scrapeBulkDeleteBtn">Delete Selected</button>
-                </div>
-                <div class="section-body">
-                    <div class="file_display" id="scrapeFileDisplay">
-                    {%- for file in scraped_files %}
-                        <div class="file_card"
-                             data-index="{{ loop.index0 }}"
-                             data-extension=".html"
-                             data-filename="{{ file.filename }}"
-                             data-category="{{ file.category.replace('scrape_', '') }}"
-                             data-source-url="{{ file.source_url or '' }}"
-                             data-date="{{ file.uploaded_at.isoformat() if file.uploaded_at else '' }}">
-                            <input type="checkbox" class="file-checkbox scrape-file-checkbox" data-id="{{ file.id }}">
-                            <span class="ext-badge ext-web">WEB</span>
-                            <div class="file-info">
-                                <div class="filename">{{ file.filename }}</div>
-                                <div class="date source-url" title="{{ file.source_url or '' }}">{{ file.source_url or file.uploaded_at }}</div>
+                    <!-- Save Job Panel -->
+                    <div class="scrape-save-job-panel" id="scrapeSaveJobPanel">
+                        <div class="scrape-save-job-row">
+                            <div class="scrape-save-schedule-field">
+                                <label for="scrapeSaveSchedule">Auto-scrape schedule</label>
+                                <select id="scrapeSaveSchedule">
+                                    <option value="">Manual only</option>
+                                    <option value="hourly">Hourly</option>
+                                    <option value="daily">Daily</option>
+                                    <option value="weekly">Weekly</option>
+                                </select>
                             </div>
-                            <button class="btn-delete" data-id="{{ file.id }}">Delete</button>
+                            <button class="btn-scrape-process" id="scrapeProcessBtn">Save job &amp; scrape now</button>
                         </div>
-                    {%- endfor %}</div>
+                    </div>
                 </div>
+            </div>
+        </div>
+
+        <!-- ================================================================
+             SECTION 3: Scrape Jobs
+             ================================================================ -->
+        <div class="workflow-panel workflow-jobs" id="scrapeJobsPanel"
+             data-jobs-url="/{{ workspace.id }}/scrape/jobs"
+             data-workspace-id="{{ workspace.id }}">
+            <div class="workflow-label">
+                <div class="workflow-label-text">
+                    <h2 class="workflow-title">Scheduled Websites</h2>
+                    <p class="workflow-desc">Manage your saved website scrape jobs</p>
+                </div>
+                <button class="btn-collapse" id="jobsCollapseBtn" title="Collapse" aria-expanded="true">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
+                    <span class="btn-collapse-label">Collapse</span>
+                </button>
+            </div>
+
+            <div id="scrapeJobsList">
+                {% if scrape_jobs %}
+                    {% for job in scrape_jobs %}
+                    <div class="scrape-job-card {% if job.is_running %}job-running{% endif %}"
+                         data-job-id="{{ job.id }}"
+                         data-run-url="/{{ workspace.id }}/scrape/jobs/{{ job.id }}/run"
+                         data-patch-url="/{{ workspace.id }}/scrape/jobs/{{ job.id }}"
+                         data-delete-url="/{{ workspace.id }}/scrape/jobs/{{ job.id }}">
+
+                        <div class="scrape-job-card-header">
+                            <div class="scrape-job-card-left">
+                                <div class="scrape-job-running-indicator" title="Scrape in progress">
+                                    <span class="job-running-spinner"></span>
+                                </div>
+                                <div class="scrape-job-info">
+                                    <div class="scrape-job-name">{{ job.name }}</div>
+                                    <div class="scrape-job-url" title="{{ job.base_url }}">{{ job.base_url }}</div>
+                                </div>
+                            </div>
+                            <div class="scrape-job-card-right">
+                                <span class="scrape-job-scope-badge">{{ job.mode }}</span>
+                                <span class="scrape-job-page-count" data-job-id="{{ job.id }}">{{ job.page_count }} page{{ 's' if job.page_count != 1 else '' }}</span>
+                            </div>
+                        </div>
+
+                        <div class="scrape-job-card-meta">
+                            <div class="scrape-job-meta-item">
+                                <span class="scrape-job-meta-label">Last scraped</span>
+                                <span class="scrape-job-meta-value job-last-scraped">
+                                    {{ job.last_scraped_at.strftime('%b %-d, %Y %I:%M %p') if job.last_scraped_at else 'Never' }}
+                                </span>
+                            </div>
+                            <div class="scrape-job-meta-item">
+                                <span class="scrape-job-meta-label">Next run</span>
+                                <span class="scrape-job-meta-value job-next-run">
+                                    {% if job.schedule_interval and job.next_scrape_at %}
+                                        {{ job.next_scrape_at.strftime('%b %-d, %Y %I:%M %p') }}
+                                    {% else %}
+                                        Manual only
+                                    {% endif %}
+                                </span>
+                            </div>
+                            <div class="scrape-job-meta-item scrape-job-schedule-wrap">
+                                <label class="scrape-job-meta-label" for="schedule-{{ job.id }}">Schedule</label>
+                                <select class="scrape-job-schedule-select" id="schedule-{{ job.id }}" data-job-id="{{ job.id }}">
+                                    <option value="" {% if not job.schedule_interval %}selected{% endif %}>Manual</option>
+                                    <option value="hourly" {% if job.schedule_interval == 'hourly' %}selected{% endif %}>Hourly</option>
+                                    <option value="daily" {% if job.schedule_interval == 'daily' %}selected{% endif %}>Daily</option>
+                                    <option value="weekly" {% if job.schedule_interval == 'weekly' %}selected{% endif %}>Weekly</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Per-job progress area (hidden until scrape runs) -->
+                        <div class="scrape-job-progress" id="job-progress-{{ job.id }}">
+                            <div class="scrape-job-progress-bar-track">
+                                <div class="scrape-job-progress-bar-fill"></div>
+                            </div>
+                            <div class="scrape-job-progress-status"></div>
+                        </div>
+
+                        <!-- Pages panel (lazy-loaded on toggle) -->
+                        <div class="scrape-job-pages-panel" id="job-pages-{{ job.id }}"
+                             data-pages-url="/{{ workspace.id }}/scrape/jobs/{{ job.id }}/pages">
+                            <div class="scrape-job-pages-list"></div>
+                        </div>
+
+                        <div class="scrape-job-card-actions">
+                            <button class="btn-job-run" data-job-id="{{ job.id }}">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                                Scrape Now
+                            </button>
+                            <button class="btn-job-pages-toggle" data-job-id="{{ job.id }}">
+                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="chevron-icon"><polyline points="6 9 12 15 18 9"/></svg>
+                                View pages
+                                {% if job.page_count > 0 %}<span class="job-pages-toggle-count">({{ job.page_count }})</span>{% endif %}
+                            </button>
+                            <button class="btn-job-delete btn-delete" data-job-id="{{ job.id }}">Delete Job</button>
+                        </div>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <div class="scrape-jobs-empty" id="scrapeJobsEmpty">
+                        No scrape jobs yet. Add a website above to get started.
+                    </div>
+                {% endif %}
             </div>
         </div>
 
@@ -326,6 +384,6 @@
         </div>
     </div>
 
-    <script src="{{ url_for('static', path='js/utils.js') }}?v=5"></script>
+    <script src="{{ url_for('static', path='js/utils.js') }}?v=7"></script>
 </body>
 </html>

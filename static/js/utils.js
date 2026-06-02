@@ -69,25 +69,20 @@ async function uploadFiles(files) {
         done: "Complete",
     };
 
-    // Escape HTML to prevent XSS from filenames
     function esc(str) {
         const d = document.createElement("div");
         d.textContent = str;
         return d.innerHTML;
     }
 
-    // Update the header counter
     function updateCounter() {
         let text = `Uploading ${totalFiles} file${totalFiles > 1 ? "s" : ""} \u2014 ${completedCount}/${totalFiles} complete`;
-        if (failedCount > 0) {
-            text += ` (${failedCount} failed)`;
-        }
+        if (failedCount > 0) text += ` (${failedCount} failed)`;
         uploadCounter.textContent = text;
     }
 
     updateCounter();
 
-    // Mark a row as failed with an error message
     function markRowError(row, message) {
         row.classList.remove("uploading");
         row.classList.add("upload-error");
@@ -98,10 +93,8 @@ async function uploadFiles(files) {
         updateCounter();
     }
 
-    // Track which files pass client-side validation
     let validCount = 0;
 
-    // Insert in-progress rows at the top of the file list
     for (const file of files) {
         const row = document.createElement("div");
         row.className = "file_card uploading";
@@ -117,12 +110,9 @@ async function uploadFiles(files) {
                 <span class="progress-label">0%</span>
             </div>
         `;
-
-        // Prepend to top of file list
         fileDisplay.prepend(row);
         rows[file.name] = row;
 
-        // Client-side file size check
         if (file.size > MAX_UPLOAD_BYTES) {
             const limitStr = formatBytes(MAX_UPLOAD_BYTES);
             const sizeStr = formatBytes(file.size);
@@ -133,10 +123,8 @@ async function uploadFiles(files) {
         }
     }
 
-    // Scroll the section body to the top so the user sees the new rows
     fileDisplay.closest(".section-body").scrollTop = 0;
 
-    // If all files were rejected client-side, stop here
     if (validCount === 0) {
         uploadCounter.textContent = `${failedCount} file${failedCount > 1 ? "s" : ""} rejected (too large)`;
         setTimeout(() => { uploadCounter.textContent = ""; }, 4000);
@@ -144,13 +132,9 @@ async function uploadFiles(files) {
         return;
     }
 
-    const res = await fetch(uploadUrl, {
-        method: "POST",
-        body: formData,
-    });
+    const res = await fetch(uploadUrl, { method: "POST", body: formData });
 
     if (!res.ok) {
-        // Mark only the rows that were actually sent (not already rejected)
         for (const [name, row] of Object.entries(rows)) {
             if (!row.classList.contains("upload-error")) {
                 markRowError(row, "Upload failed");
@@ -180,11 +164,8 @@ async function uploadFiles(files) {
             if (!payload) continue;
 
             if (payload === "[DONE]") {
-                // All files processed — show final summary
                 let summary = `${completedCount} file${completedCount !== 1 ? "s" : ""} uploaded`;
-                if (failedCount > 0) {
-                    summary += `, ${failedCount} failed`;
-                }
+                if (failedCount > 0) summary += `, ${failedCount} failed`;
                 uploadCounter.textContent = summary;
                 setTimeout(() => { uploadCounter.textContent = ""; }, 3000);
                 rebuildCheckboxes();
@@ -199,20 +180,16 @@ async function uploadFiles(files) {
                 if (!row) continue;
 
                 if (event.status === "error") {
-                    // Per-file error from the backend
                     markRowError(row, event.message || "Processing failed");
                 } else if (event.status === "done") {
-                    // Transform the uploading row into a completed file card
                     completedCount++;
                     updateCounter();
                     transformToCompleted(row, event);
                 } else {
-                    // Update progress indicator
                     const fill = row.querySelector(".progress-bar-fill");
                     const label = row.querySelector(".progress-label");
                     const dateEl = row.querySelector(".file-info .date");
                     const pct = steps[event.status] || 0;
-
                     fill.style.width = pct + "%";
                     label.textContent = pct + "%";
                     dateEl.textContent = statusLabels[event.status] || event.status;
@@ -225,20 +202,16 @@ async function uploadFiles(files) {
 }
 
 function transformToCompleted(row, event) {
-    // event has: file (original name), name (processed name), location (file ID),
-    //            status, original_extension
     const fileId = event.location;
     const displayName = event.name;
     const ext = (event.original_extension || "").replace(".", "");
 
-    // Escape HTML to prevent XSS from filenames
     function esc(str) {
         const d = document.createElement("div");
         d.textContent = str;
         return d.innerHTML;
     }
 
-    // Format a "just now" timestamp
     const now = new Date();
     const dateStr = now.toLocaleString("en-US", {
         month: "short", day: "numeric", year: "numeric",
@@ -259,13 +232,9 @@ function transformToCompleted(row, event) {
         <button class="btn-delete" data-id="${esc(fileId)}">Delete</button>
     `;
 
-    // Wire up the delete button on this new card
     attachDeleteHandler(row.querySelector(".btn-delete"));
-
-    // Apply current filter
     applyCurrentFilter();
 
-    // Remove the animation class after it finishes
     row.addEventListener("animationend", () => {
         row.classList.remove("just-completed");
     }, { once: true });
@@ -278,28 +247,19 @@ function attachDeleteHandler(btn) {
         e.stopPropagation();
         if (!confirm("Delete this document?")) return;
 
-        const res = await fetch(`/delete/${btn.dataset.id}`, {
-            method: "DELETE",
-        });
+        const res = await fetch(`/delete/${btn.dataset.id}`, { method: "DELETE" });
 
         if (res.ok) {
             const card = btn.closest(".file_card");
-            const isScrapeCard = card.closest("#scrapeFileDisplay") !== null;
             card.remove();
-            if (isScrapeCard) {
-                rebuildScrapeCheckboxes();
-                updateScrapeSelection();
-            } else {
-                rebuildCheckboxes();
-                updateSelection();
-                refreshFilterBar();
-            }
+            rebuildCheckboxes();
+            updateSelection();
+            refreshFilterBar();
         }
     });
 }
 
-// Attach delete handlers to all existing cards on page load
-document.querySelectorAll(".btn-delete").forEach(attachDeleteHandler);
+document.querySelectorAll(".file_display .btn-delete").forEach(attachDeleteHandler);
 
 /* ========== Checkboxes: Shift-Click Multi-Select ========== */
 
@@ -312,9 +272,7 @@ function rebuildCheckboxes() {
     checkboxes = Array.from(fileDisplay.querySelectorAll(".file-checkbox"));
     lastCheckedIndex = null;
 
-    // Re-attach click handlers
     checkboxes.forEach((cb, index) => {
-        // Remove old listeners by cloning
         const newCb = cb.cloneNode(true);
         cb.parentNode.replaceChild(newCb, cb);
         checkboxes[index] = newCb;
@@ -324,9 +282,7 @@ function rebuildCheckboxes() {
                 const start = Math.min(lastCheckedIndex, index);
                 const end = Math.max(lastCheckedIndex, index);
                 const checked = newCb.checked;
-                for (let i = start; i <= end; i++) {
-                    checkboxes[i].checked = checked;
-                }
+                for (let i = start; i <= end; i++) checkboxes[i].checked = checked;
             }
             lastCheckedIndex = index;
             updateSelection();
@@ -336,25 +292,18 @@ function rebuildCheckboxes() {
 
 function updateSelection() {
     const selected = checkboxes.filter((cb) => cb.checked);
-
-    // Toggle highlight on cards
     checkboxes.forEach((cb) => {
         cb.closest(".file_card").classList.toggle("selected", cb.checked);
     });
-
-    // Show/hide bulk actions bar
     if (selected.length > 0) {
         bulkActions.classList.add("visible");
         selectedCountEl.textContent = selected.length;
     } else {
         bulkActions.classList.remove("visible");
     }
-
-    // Update select-all checkbox state
     syncSelectAllCheckbox();
 }
 
-// Initial setup for existing checkboxes
 rebuildCheckboxes();
 
 /* ========== Select All ========== */
@@ -363,35 +312,25 @@ const selectAllCb = document.getElementById("selectAllCb");
 
 selectAllCb.addEventListener("change", () => {
     const isChecked = selectAllCb.checked;
-
-    // Only affect visible (non-filtered) cards
     checkboxes.forEach((cb) => {
         const card = cb.closest(".file_card");
-        if (!card.classList.contains("filtered-out")) {
-            cb.checked = isChecked;
-        }
+        if (!card.classList.contains("filtered-out")) cb.checked = isChecked;
     });
-
     updateSelection();
 });
 
 function syncSelectAllCheckbox() {
-    const visibleCheckboxes = checkboxes.filter(
-        (cb) => !cb.closest(".file_card").classList.contains("filtered-out")
-    );
-
-    if (visibleCheckboxes.length === 0) {
+    const visible = checkboxes.filter((cb) => !cb.closest(".file_card").classList.contains("filtered-out"));
+    if (visible.length === 0) {
         selectAllCb.checked = false;
         selectAllCb.indeterminate = false;
         return;
     }
-
-    const checkedCount = visibleCheckboxes.filter((cb) => cb.checked).length;
-
+    const checkedCount = visible.filter((cb) => cb.checked).length;
     if (checkedCount === 0) {
         selectAllCb.checked = false;
         selectAllCb.indeterminate = false;
-    } else if (checkedCount === visibleCheckboxes.length) {
+    } else if (checkedCount === visible.length) {
         selectAllCb.checked = true;
         selectAllCb.indeterminate = false;
     } else {
@@ -405,24 +344,18 @@ function syncSelectAllCheckbox() {
 const deleteOverlay = document.getElementById("deleteOverlay");
 const deleteOverlayTitle = document.getElementById("deleteOverlayTitle");
 const deleteOverlayMsg = document.getElementById("deleteOverlayMsg");
-
 const bulkDeleteBtn = document.getElementById("bulkDeleteBtn");
 
 bulkDeleteBtn.addEventListener("click", async () => {
     const selected = checkboxes.filter((cb) => cb.checked);
     const fileIds = selected.map((cb) => cb.dataset.id);
-
     if (!fileIds.length) return;
 
     const count = fileIds.length;
-    const confirmMsg = `Delete ${count} document${count > 1 ? "s" : ""}?`;
-    if (!confirm(confirmMsg)) return;
+    if (!confirm(`Delete ${count} document${count > 1 ? "s" : ""}?`)) return;
 
-    // Show loading state on the button
     bulkDeleteBtn.disabled = true;
     bulkDeleteBtn.innerHTML = '<span class="btn-spinner"></span>Deleting...';
-
-    // Show the deleting overlay
     deleteOverlayTitle.textContent = `Deleting ${count} file${count > 1 ? "s" : ""}...`;
     deleteOverlayMsg.textContent = count >= 5
         ? "This may take a moment for larger selections."
@@ -436,13 +369,10 @@ bulkDeleteBtn.addEventListener("click", async () => {
     });
 
     if (res.ok) {
-        // Remove deleted cards from the DOM
         const result = await res.json();
         const deletedIds = new Set(result.deleted || []);
         selected.forEach((cb) => {
-            if (deletedIds.has(cb.dataset.id)) {
-                cb.closest(".file_card").remove();
-            }
+            if (deletedIds.has(cb.dataset.id)) cb.closest(".file_card").remove();
         });
         rebuildCheckboxes();
         updateSelection();
@@ -451,20 +381,19 @@ bulkDeleteBtn.addEventListener("click", async () => {
         alert("Failed to delete selected documents.");
     }
 
-    // Reset button state
     bulkDeleteBtn.disabled = false;
     bulkDeleteBtn.textContent = "Delete Selected";
     deleteOverlay.classList.remove("visible");
 });
 
 /* ==========================================================================
-   WEB SCRAPING
+   WEB SCRAPING — Form (Phase 1: Discover, Phase 2: Save Job)
    ========================================================================== */
 
 const scrapeArea = document.getElementById("scrapeArea");
 const scrapeBtn = document.getElementById("scrapeBtn");
 const scrapeUrlInput = document.getElementById("scrapeUrl");
-const scrapeCategoryInput = document.getElementById("scrapeCategory");
+const scrapeJobNameInput = document.getElementById("scrapeJobName");
 const scrapeFormExtras = document.getElementById("scrapeFormExtras");
 const scrapeAdvancedToggle = document.getElementById("scrapeAdvancedToggle");
 const scrapeAdvancedPanel = document.getElementById("scrapeAdvanced");
@@ -477,23 +406,14 @@ const scrapeUrlList = document.getElementById("scrapeUrlList");
 const scrapeSelectAllCb = document.getElementById("scrapeSelectAllCb");
 const scrapeProcessBtn = document.getElementById("scrapeProcessBtn");
 const scrapeCancelBtn = document.getElementById("scrapeCancelBtn");
-
-const scrapeFilterBar = document.getElementById("scrapeFilterBar");
-
-const scrapeFileDisplay = document.getElementById("scrapeFileDisplay");
-const scrapeCounter = document.getElementById("scrapeCounter");
-const scrapeFilesSelectAllCb = document.getElementById("scrapeFilesSelectAllCb");
-const scrapeBulkActions = document.getElementById("scrapeBulkActions");
-const scrapeSelectedCountEl = document.getElementById("scrapeSelectedCount");
-const scrapeBulkDeleteBtn = document.getElementById("scrapeBulkDeleteBtn");
-const scrapeSortSelect = document.getElementById("scrapeSortSelect");
+const scrapeSaveSchedule = document.getElementById("scrapeSaveSchedule");
 
 const discoverUrl = scrapeArea.dataset.discoverUrl;
-const processUrl = scrapeArea.dataset.processUrl;
+const jobsUrl = scrapeArea.dataset.jobsUrl;
 
 let discoveredUrls = [];
-let selectedScope = null;   // 'single' | 'links' | 'prefix'
-let selectedDepth = 1;      // 1 | 2 | 3 (used when scope === 'links')
+let selectedScope = null;
+let selectedDepth = 1;
 
 // Escape HTML to prevent XSS
 function escHtml(str) {
@@ -506,55 +426,9 @@ function escHtml(str) {
 
 function updateFormVisibility() {
     const hasUrl = scrapeUrlInput.value.trim().length > 0;
-    const hasCat = scrapeCategoryInput.value.trim().length > 0;
-    scrapeFormExtras.classList.toggle("visible", hasUrl && hasCat);
+    const hasName = scrapeJobNameInput.value.trim().length > 0;
+    scrapeFormExtras.classList.toggle("visible", hasUrl && hasName);
 }
-
-/* ---------- Category dropdown ---------- */
-
-const categoryDropdown = document.getElementById("scrapeCategoryDropdown");
-const existingCategories = (scrapeCategoryInput.dataset.categories || "")
-    .split(",").map(s => s.trim()).filter(Boolean);
-
-function renderCategoryDropdown(filter) {
-    const q = filter.toLowerCase();
-    const matches = existingCategories.filter(c => c.toLowerCase().includes(q));
-    if (matches.length === 0) {
-        categoryDropdown.classList.remove("open");
-        return;
-    }
-    categoryDropdown.innerHTML = matches.map(c =>
-        `<li class="scrape-category-option" data-value="${escHtml(c)}">${escHtml(c)}</li>`
-    ).join("");
-    categoryDropdown.classList.add("open");
-}
-
-scrapeCategoryInput.addEventListener("focus", () => {
-    renderCategoryDropdown(scrapeCategoryInput.value);
-});
-
-scrapeCategoryInput.addEventListener("input", () => {
-    renderCategoryDropdown(scrapeCategoryInput.value);
-});
-
-categoryDropdown.addEventListener("mousedown", (e) => {
-    const option = e.target.closest(".scrape-category-option");
-    if (!option) return;
-    e.preventDefault(); // prevent blur firing before click
-    scrapeCategoryInput.value = option.dataset.value;
-    categoryDropdown.classList.remove("open");
-    updateFormVisibility();
-    updatePreview();
-});
-
-scrapeCategoryInput.addEventListener("blur", () => {
-    categoryDropdown.classList.remove("open");
-});
-
-// Close on Escape
-scrapeCategoryInput.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") categoryDropdown.classList.remove("open");
-});
 
 /* ---------- Advanced Options Toggle ---------- */
 
@@ -599,12 +473,11 @@ const scrapePreviewText = document.getElementById("scrapePreviewText");
 
 function updatePreview() {
     const url = scrapeUrlInput.value.trim();
-    const category = scrapeCategoryInput.value.trim();
+    const jobName = scrapeJobNameInput.value.trim();
     const maxVal = parseInt(scrapeMaxPagesInput.value, 10);
     const maxLabel = maxVal === 0 ? "no limit" : maxVal;
     const stayOnDomain = scrapeStayOnDomainCb.checked;
-
-    const catSuffix = category ? ` under ${category}` : "";
+    const nameSuffix = jobName ? ` (${jobName})` : "";
     const domainSuffix = stayOnDomain ? ", staying on this domain" : "";
 
     if (!url && !selectedScope) {
@@ -626,12 +499,11 @@ function updatePreview() {
     scrapePreviewDot.className = "scrape-preview-dot active";
 
     if (selectedScope === "single") {
-        const catPart = category ? ` under ${category}` : "";
-        scrapePreviewText.textContent = `Will add 1 page${catPart}: ${url}`;
+        scrapePreviewText.textContent = `Will add 1 page${nameSuffix}: ${url}`;
     } else if (selectedScope === "links") {
         const n = selectedDepth;
         scrapePreviewText.textContent =
-            `Will follow links ${n} level${n !== 1 ? "s" : ""} deep from this page (up to ${maxLabel} pages)${catSuffix}${domainSuffix}.`;
+            `Will follow links ${n} level${n !== 1 ? "s" : ""} deep from this page (up to ${maxLabel} pages)${nameSuffix}${domainSuffix}.`;
     } else if (selectedScope === "prefix") {
         let pathname = "/";
         try {
@@ -640,7 +512,7 @@ function updatePreview() {
             pathname = p;
         } catch (_) {}
         scrapePreviewText.textContent =
-            `Will add all pages under ${pathname} (up to ${maxLabel} pages)${catSuffix}${domainSuffix}.`;
+            `Will add all pages under ${pathname} (up to ${maxLabel} pages)${nameSuffix}${domainSuffix}.`;
     }
 }
 
@@ -649,9 +521,8 @@ function updateSubmitBtn() {
     scrapeBtn.disabled = !(hasUrl && selectedScope);
 }
 
-// Re-run preview + enable state on any relevant field change
 scrapeUrlInput.addEventListener("input", () => { updateFormVisibility(); updatePreview(); updateSubmitBtn(); });
-scrapeCategoryInput.addEventListener("input", () => { updateFormVisibility(); updatePreview(); });
+scrapeJobNameInput.addEventListener("input", () => { updateFormVisibility(); updatePreview(); });
 scrapeMaxPagesInput.addEventListener("input", updatePreview);
 scrapeStayOnDomainCb.addEventListener("change", updatePreview);
 
@@ -659,7 +530,7 @@ scrapeStayOnDomainCb.addEventListener("change", updatePreview);
 
 function resetScrapeForm() {
     scrapeUrlInput.value = "";
-    scrapeCategoryInput.value = "";
+    scrapeJobNameInput.value = "";
     selectedScope = null;
     selectedDepth = 1;
     scrapeFormExtras.classList.remove("visible");
@@ -670,6 +541,7 @@ function resetScrapeForm() {
     });
     scrapeBtn.textContent = "Discover pages";
     scrapeBtn.disabled = true;
+    scrapeSaveSchedule.value = "";
     updatePreview();
 }
 
@@ -678,19 +550,17 @@ function resetScrapeForm() {
 scrapeBtn.addEventListener("click", async () => {
     const baseUrl = scrapeUrlInput.value.trim();
 
-    // Hide any previous discovery results
     scrapeDiscovery.classList.remove("visible");
     scrapeUrlList.innerHTML = "";
     discoveredUrls = [];
 
-    // Show loading state
     scrapeBtn.disabled = true;
     scrapeBtn.innerHTML = '<span class="btn-spinner"></span> Searching&hellip;';
 
     const mode = selectedScope === "prefix" ? "prefix" : "depth";
     const max_depth = selectedScope === "links" ? selectedDepth : (selectedScope === "single" ? 0 : 1);
-
     const maxPagesVal = parseInt(scrapeMaxPagesInput.value, 10);
+
     const payload = {
         base_url: baseUrl,
         mode,
@@ -756,20 +626,16 @@ function renderDiscoveredUrls(blockedUrls = []) {
             ${blockedUrls.length} page${blockedUrls.length !== 1 ? "s" : ""} blocked by website host
         `;
         scrapeUrlList.appendChild(divider);
-
         blockedUrls.forEach((url) => {
             const item = document.createElement("div");
             item.className = "scrape-url-item scrape-url-item--blocked";
-            item.innerHTML = `
-                <span class="url-text" title="${escHtml(url)}">${escHtml(url)}</span>
-            `;
+            item.innerHTML = `<span class="url-text" title="${escHtml(url)}">${escHtml(url)}</span>`;
             scrapeUrlList.appendChild(item);
         });
     }
 
     updateDiscoveryCount();
 
-    // Attach checkbox handlers
     scrapeUrlList.querySelectorAll(".scrape-url-cb").forEach((cb) => {
         cb.addEventListener("change", updateDiscoveryCount);
     });
@@ -780,10 +646,9 @@ function updateDiscoveryCount() {
     const checkedCount = Array.from(cbs).filter((cb) => cb.checked).length;
     const total = discoveredUrls.length;
     scrapeDiscoveryCount.textContent = `Found ${total} page${total !== 1 ? "s" : ""}`;
-    scrapeProcessBtn.textContent = `Add to knowledge base (${checkedCount})`;
+    scrapeProcessBtn.textContent = `Save job & scrape now (${checkedCount})`;
     scrapeProcessBtn.disabled = checkedCount === 0;
 
-    // Update select-all state
     if (checkedCount === 0) {
         scrapeSelectAllCb.checked = false;
         scrapeSelectAllCb.indeterminate = false;
@@ -796,97 +661,474 @@ function updateDiscoveryCount() {
     }
 }
 
-// Select all / deselect all in discovery
 scrapeSelectAllCb.addEventListener("change", () => {
     const checked = scrapeSelectAllCb.checked;
-    scrapeUrlList.querySelectorAll(".scrape-url-cb").forEach((cb) => {
-        cb.checked = checked;
-    });
+    scrapeUrlList.querySelectorAll(".scrape-url-cb").forEach((cb) => { cb.checked = checked; });
     updateDiscoveryCount();
 });
 
-// Cancel discovery — dismiss the URL list
 scrapeCancelBtn.addEventListener("click", () => {
     scrapeDiscovery.classList.remove("visible");
     discoveredUrls = [];
     scrapeUrlList.innerHTML = "";
 });
 
-/* ---------- Phase 2: Process Selected URLs via SSE ---------- */
+/* ---------- Phase 2: Save Job + Immediately Run via SSE ---------- */
 
 scrapeProcessBtn.addEventListener("click", async () => {
     const cbs = scrapeUrlList.querySelectorAll(".scrape-url-cb:checked");
-    const selectedUrls = Array.from(cbs).map((cb) => discoveredUrls[parseInt(cb.dataset.index)]);
+    // We only use selectedUrls for the initial count display; the backend re-discovers
+    const selectedUrlCount = cbs.length;
+    if (selectedUrlCount === 0) return;
 
-    if (selectedUrls.length === 0) return;
-
-    const category = scrapeCategoryInput.value.trim() || "default";
+    const jobName = scrapeJobNameInput.value.trim() || "Untitled Job";
+    const schedule = scrapeSaveSchedule.value || null;
+    const mode = selectedScope === "prefix" ? "prefix" : (selectedScope === "single" ? "single" : "depth");
+    const maxPagesVal = parseInt(scrapeMaxPagesInput.value, 10);
 
     isScraping = true;
     scrapeProcessBtn.disabled = true;
-    scrapeProcessBtn.textContent = "Adding\u2026";
+    scrapeProcessBtn.textContent = "Saving\u2026";
     scrapeBtn.disabled = true;
 
-    const totalUrls = selectedUrls.length;
-    let completedCount = 0;
-    let failedCount = 0;
-
-    const rows = {};
-    const steps = { fetching: 33, converted: 66, done: 100 };
-    const statusLabels = {
-        fetching: "Downloading page...",
-        converted: "Processing content...",
-        done: "Complete",
-    };
-
-    function updateScrapeCounter() {
-        let text = `Downloading ${totalUrls} page${totalUrls > 1 ? "s" : ""} \u2014 ${completedCount}/${totalUrls} complete`;
-        if (failedCount > 0) text += ` (${failedCount} failed)`;
-        scrapeCounter.textContent = text;
-    }
-
-    updateScrapeCounter();
-
-    // Insert in-progress rows at top of scrape file display
-    for (const url of selectedUrls) {
-        const row = document.createElement("div");
-        row.className = "file_card scraping";
-        row.innerHTML = `
-            <span class="ext-badge ext-web">WEB</span>
-            <div class="file-info">
-                <div class="filename">${escHtml(url)}</div>
-                <div class="date">Waiting...</div>
-            </div>
-            <div class="upload-indicator">
-                <div class="progress-bar-track">
-                    <div class="progress-bar-fill"></div>
-                </div>
-                <span class="progress-label">0%</span>
-            </div>
-        `;
-        scrapeFileDisplay.prepend(row);
-        rows[url] = row;
-    }
-
-    // Scroll to see progress
-    const scrapeBody = scrapeFileDisplay.closest(".section-body");
-    if (scrapeBody) scrapeBody.scrollTop = 0;
-
-    // SSE fetch
+    // 1. Create the job
+    let job;
     try {
-        const res = await fetch(processUrl, {
+        const res = await fetch(jobsUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ urls: selectedUrls, category: category }),
+            body: JSON.stringify({
+                name: jobName,
+                base_url: scrapeUrlInput.value.trim(),
+                mode: mode,
+                max_depth: selectedScope === "links" ? selectedDepth : (selectedScope === "single" ? 0 : 1),
+                max_pages: maxPagesVal === 0 ? 10000 : maxPagesVal,
+                allow_offsite: !scrapeStayOnDomainCb.checked,
+                schedule_interval: schedule,
+            }),
         });
-
         if (!res.ok) {
-            throw new Error(`Download request failed (${res.status})`);
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.detail || "Failed to save job");
+        }
+        job = await res.json();
+    } catch (err) {
+        alert("Failed to create scrape job: " + err.message);
+        isScraping = false;
+        scrapeProcessBtn.disabled = false;
+        scrapeProcessBtn.textContent = "Save job & scrape now";
+        scrapeBtn.disabled = false;
+        return;
+    }
+
+    // 2. Insert card immediately into the UI (in running state)
+    const workspaceId = document.getElementById("scrapeJobsPanel").dataset.workspaceId;
+    insertJobCard(job, workspaceId, true);
+
+    // Remove empty state notice if present
+    const emptyNotice = document.getElementById("scrapeJobsEmpty");
+    if (emptyNotice) emptyNotice.remove();
+
+    // 3. Collapse the discovery panel and reset form
+    scrapeDiscovery.classList.remove("visible");
+    resetScrapeForm();
+    scrapeProcessBtn.disabled = false;
+    scrapeProcessBtn.textContent = "Save job & scrape now";
+
+    // 4. Run the job via SSE — streaming into the new card
+    isScraping = false;
+    await runJobById(job.id, workspaceId);
+});
+
+/* ==========================================================================
+   SCRAPE JOB CARDS
+   ========================================================================== */
+
+const scrapeJobsPanel = document.getElementById("scrapeJobsPanel");
+const scrapeJobsList = document.getElementById("scrapeJobsList");
+
+function formatJobDate(isoStr) {
+    if (!isoStr) return "Never";
+    const d = new Date(isoStr);
+    return d.toLocaleString("en-US", {
+        month: "short", day: "numeric", year: "numeric",
+        hour: "numeric", minute: "2-digit",
+    });
+}
+
+function insertJobCard(job, workspaceId, startRunning = false) {
+    // Remove the empty-state message if present
+    const empty = document.getElementById("scrapeJobsEmpty");
+    if (empty) empty.remove();
+
+    const card = document.createElement("div");
+    card.className = "scrape-job-card" + (startRunning ? " job-running" : "");
+    card.dataset.jobId = job.id;
+    card.dataset.runUrl = `/${workspaceId}/scrape/jobs/${job.id}/run`;
+    card.dataset.patchUrl = `/${workspaceId}/scrape/jobs/${job.id}`;
+    card.dataset.deleteUrl = `/${workspaceId}/scrape/jobs/${job.id}`;
+
+    const scheduleOpts = [
+        { value: "", label: "Manual" },
+        { value: "hourly", label: "Hourly" },
+        { value: "daily", label: "Daily" },
+        { value: "weekly", label: "Weekly" },
+    ];
+    const scheduleOptions = scheduleOpts.map(o =>
+        `<option value="${o.value}"${(job.schedule_interval || "") === o.value ? " selected" : ""}>${o.label}</option>`
+    ).join("");
+
+    const nextRun = job.schedule_interval && job.next_scrape_at
+        ? formatJobDate(job.next_scrape_at)
+        : "Manual only";
+
+    card.innerHTML = `
+        <div class="scrape-job-card-header">
+            <div class="scrape-job-card-left">
+                <div class="scrape-job-running-indicator" title="Scrape in progress">
+                    <span class="job-running-spinner"></span>
+                </div>
+                <div class="scrape-job-info">
+                    <div class="scrape-job-name">${escHtml(job.name)}</div>
+                    <div class="scrape-job-url" title="${escHtml(job.base_url)}">${escHtml(job.base_url)}</div>
+                </div>
+            </div>
+            <div class="scrape-job-card-right">
+                <span class="scrape-job-scope-badge">${escHtml(job.mode)}</span>
+                <span class="scrape-job-page-count" data-job-id="${escHtml(job.id)}">${job.page_count || 0} page${(job.page_count || 0) !== 1 ? "s" : ""}</span>
+            </div>
+        </div>
+
+        <div class="scrape-job-card-meta">
+            <div class="scrape-job-meta-item">
+                <span class="scrape-job-meta-label">Last scraped</span>
+                <span class="scrape-job-meta-value job-last-scraped">${formatJobDate(job.last_scraped_at)}</span>
+            </div>
+            <div class="scrape-job-meta-item">
+                <span class="scrape-job-meta-label">Next run</span>
+                <span class="scrape-job-meta-value job-next-run">${escHtml(nextRun)}</span>
+            </div>
+            <div class="scrape-job-meta-item scrape-job-schedule-wrap">
+                <label class="scrape-job-meta-label" for="schedule-${escHtml(job.id)}">Schedule</label>
+                <select class="scrape-job-schedule-select" id="schedule-${escHtml(job.id)}" data-job-id="${escHtml(job.id)}">
+                    ${scheduleOptions}
+                </select>
+            </div>
+        </div>
+
+        <div class="scrape-job-progress" id="job-progress-${escHtml(job.id)}">
+            <div class="scrape-job-progress-bar-track">
+                <div class="scrape-job-progress-bar-fill"></div>
+            </div>
+            <div class="scrape-job-progress-status"></div>
+        </div>
+
+        <div class="scrape-job-card-actions">
+            <button class="btn-job-run" data-job-id="${escHtml(job.id)}">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                Scrape Now
+            </button>
+            <button class="btn-job-delete btn-delete" data-job-id="${escHtml(job.id)}">Delete Job</button>
+        </div>
+    `;
+
+    // Prepend to top
+    scrapeJobsList.prepend(card);
+
+    // Mark pages panel as not yet loaded
+    const newPagesPanel = card.querySelector(".scrape-job-pages-panel");
+    if (newPagesPanel) newPagesPanel.dataset.loaded = "false";
+
+    // Attach handlers
+    attachJobCardHandlers(card);
+
+    return card;
+}
+
+function updateJobCard(card, job) {
+    // Update meta values
+    const lastScrapedEl = card.querySelector(".job-last-scraped");
+    const nextRunEl = card.querySelector(".job-next-run");
+    const pageCountEl = card.querySelector(".scrape-job-page-count");
+
+    if (lastScrapedEl) lastScrapedEl.textContent = formatJobDate(job.last_scraped_at);
+    if (nextRunEl) {
+        nextRunEl.textContent = (job.schedule_interval && job.next_scrape_at)
+            ? formatJobDate(job.next_scrape_at)
+            : "Manual only";
+    }
+    if (pageCountEl) {
+        pageCountEl.textContent = `${job.page_count || 0} page${(job.page_count || 0) !== 1 ? "s" : ""}`;
+    }
+
+    card.classList.toggle("job-running", !!job.is_running);
+}
+
+function attachJobCardHandlers(card) {
+    const jobId = card.dataset.jobId;
+
+    // Schedule change
+    const scheduleSelect = card.querySelector(".scrape-job-schedule-select");
+    if (scheduleSelect) {
+        scheduleSelect.addEventListener("change", async () => {
+            const newInterval = scheduleSelect.value || null;
+            try {
+                const res = await fetch(card.dataset.patchUrl, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ schedule_interval: newInterval }),
+                });
+                if (res.ok) {
+                    const updated = await res.json();
+                    updateJobCard(card, updated);
+                }
+            } catch (e) {
+                console.error("Failed to update schedule:", e);
+            }
+        });
+    }
+
+    // Scrape Now button
+    const runBtn = card.querySelector(".btn-job-run");
+    if (runBtn) {
+        runBtn.addEventListener("click", () => {
+            const workspaceId = scrapeJobsPanel.dataset.workspaceId;
+            runJobById(jobId, workspaceId);
+        });
+    }
+
+    // View Pages toggle
+    const pagesToggleBtn = card.querySelector(".btn-job-pages-toggle");
+    const pagesPanel = card.querySelector(".scrape-job-pages-panel");
+    if (pagesToggleBtn && pagesPanel) {
+        pagesToggleBtn.addEventListener("click", () => toggleJobPages(card, pagesToggleBtn, pagesPanel));
+    }
+
+    // Delete Job button
+    const deleteBtn = card.querySelector(".btn-job-delete");
+    if (deleteBtn) {
+        deleteBtn.addEventListener("click", async () => {
+            if (!confirm("Delete this scrape job and all its downloaded pages?")) return;
+
+            deleteBtn.disabled = true;
+            deleteBtn.textContent = "Deleting...";
+
+            deleteOverlayTitle.textContent = "Deleting scrape job...";
+            deleteOverlayMsg.textContent = "Removing all pages from workspace...";
+            deleteOverlay.classList.add("visible");
+
+            try {
+                const res = await fetch(card.dataset.deleteUrl, { method: "DELETE" });
+                if (res.ok) {
+                    card.remove();
+                    // Show empty state if no jobs remain
+                    if (scrapeJobsList.querySelectorAll(".scrape-job-card").length === 0) {
+                        const empty = document.createElement("div");
+                        empty.className = "scrape-jobs-empty";
+                        empty.id = "scrapeJobsEmpty";
+                        empty.textContent = "No scrape jobs yet. Add a website above to get started.";
+                        scrapeJobsList.appendChild(empty);
+                    }
+                } else {
+                    alert("Failed to delete job.");
+                    deleteBtn.disabled = false;
+                    deleteBtn.textContent = "Delete Job";
+                }
+            } catch (e) {
+                alert("Failed to delete job: " + e.message);
+                deleteBtn.disabled = false;
+                deleteBtn.textContent = "Delete Job";
+            } finally {
+                deleteOverlay.classList.remove("visible");
+            }
+        });
+    }
+}
+
+// Attach handlers to all job cards that already exist in the DOM
+document.querySelectorAll(".scrape-job-card").forEach(attachJobCardHandlers);
+
+/* ---------- Job Pages Panel ---------- */
+
+async function toggleJobPages(card, btn, panel) {
+    const isOpen = panel.classList.contains("visible");
+
+    if (isOpen) {
+        panel.classList.remove("visible");
+        btn.classList.remove("open");
+        return;
+    }
+
+    // Mark as open immediately so the UI responds
+    panel.classList.add("visible");
+    btn.classList.add("open");
+
+    // If already loaded (and not stale), don't re-fetch
+    if (panel.dataset.loaded === "true") return;
+
+    const listEl = panel.querySelector(".scrape-job-pages-list");
+    listEl.innerHTML = '<div class="job-pages-loading">Loading pages\u2026</div>';
+
+    try {
+        const res = await fetch(panel.dataset.pagesUrl);
+        if (!res.ok) throw new Error(`Failed to load pages (${res.status})`);
+        const pages = await res.json();
+        panel.dataset.loaded = "true";
+        renderJobPages(listEl, pages, card);
+    } catch (e) {
+        listEl.innerHTML = `<div class="job-pages-empty">Failed to load pages: ${escHtml(e.message)}</div>`;
+    }
+}
+
+function renderJobPages(listEl, pages, card) {
+    if (!pages || pages.length === 0) {
+        listEl.innerHTML = '<div class="job-pages-empty">No pages scraped yet. Run a scrape to populate this job.</div>';
+        return;
+    }
+
+    listEl.innerHTML = "";
+
+    // Search bar
+    const searchWrap = document.createElement("div");
+    searchWrap.className = "job-pages-search-wrap";
+    searchWrap.innerHTML = `<input type="search" class="job-pages-search" placeholder="Search pages\u2026">`;
+    listEl.appendChild(searchWrap);
+
+    const searchInput = searchWrap.querySelector(".job-pages-search");
+
+    const itemsContainer = document.createElement("div");
+    itemsContainer.className = "job-pages-items";
+    listEl.appendChild(itemsContainer);
+
+    function renderItems(filter) {
+        const q = (filter || "").toLowerCase();
+        const filtered = q ? pages.filter(p =>
+            (p.source_url || "").toLowerCase().includes(q) ||
+            (p.filename || "").toLowerCase().includes(q)
+        ) : pages;
+
+        itemsContainer.innerHTML = "";
+        if (filtered.length === 0) {
+            itemsContainer.innerHTML = '<div class="job-pages-empty">No matching pages.</div>';
+            return;
+        }
+
+        filtered.forEach(page => {
+            const row = document.createElement("div");
+            row.className = "job-page-row";
+            row.dataset.fileId = page.id;
+
+            const checkedDate = page.last_checked_at
+                ? new Date(page.last_checked_at).toLocaleString("en-US", {
+                    month: "short", day: "numeric", year: "numeric",
+                    hour: "numeric", minute: "2-digit",
+                  })
+                : (page.uploaded_at
+                    ? new Date(page.uploaded_at).toLocaleString("en-US", {
+                        month: "short", day: "numeric", year: "numeric",
+                        hour: "numeric", minute: "2-digit",
+                      })
+                    : "Unknown");
+
+            const displayUrl = page.source_url || page.filename;
+
+            row.innerHTML = `
+                <div class="job-page-info">
+                    <div class="job-page-url" title="${escHtml(displayUrl)}">
+                        ${page.source_url
+                            ? `<a href="${escHtml(page.source_url)}" target="_blank" rel="noopener noreferrer">${escHtml(displayUrl)}</a>`
+                            : escHtml(displayUrl)
+                        }
+                    </div>
+                    <div class="job-page-meta">Last checked: ${escHtml(checkedDate)}</div>
+                </div>
+                <button class="btn-job-page-delete" data-file-id="${escHtml(page.id)}" title="Remove this page">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                </button>
+            `;
+
+            // Per-page delete
+            row.querySelector(".btn-job-page-delete").addEventListener("click", async (e) => {
+                e.stopPropagation();
+                if (!confirm("Remove this page from the workspace?")) return;
+
+                const btn = e.currentTarget;
+                btn.disabled = true;
+
+                const res = await fetch(`/delete/${page.id}`, { method: "DELETE" });
+                if (res.ok) {
+                    // Remove from local pages array so re-renders stay accurate
+                    const idx = pages.findIndex(p => p.id === page.id);
+                    if (idx !== -1) pages.splice(idx, 1);
+
+                    row.remove();
+
+                    // Update the page count badge on the card header
+                    const pageCountEl = card.querySelector(".scrape-job-page-count");
+                    if (pageCountEl) {
+                        const current = parseInt(pageCountEl.textContent) || 0;
+                        const next = Math.max(0, current - 1);
+                        pageCountEl.textContent = `${next} page${next !== 1 ? "s" : ""}`;
+                    }
+
+                    // Update the toggle button count badge
+                    const toggleCount = card.querySelector(".job-pages-toggle-count");
+                    if (toggleCount) {
+                        const current = parseInt(toggleCount.textContent.replace(/\D/g, "")) || 0;
+                        const next = Math.max(0, current - 1);
+                        toggleCount.textContent = `(${next})`;
+                    }
+
+                    if (pages.length === 0) {
+                        itemsContainer.innerHTML = '<div class="job-pages-empty">No pages scraped yet. Run a scrape to populate this job.</div>';
+                    }
+                } else {
+                    alert("Failed to delete page.");
+                    btn.disabled = false;
+                }
+            });
+
+            itemsContainer.appendChild(row);
+        });
+    }
+
+    searchInput.addEventListener("input", () => renderItems(searchInput.value));
+    renderItems("");
+}
+
+/* ---------- Run a job via SSE ---------- */
+
+async function runJobById(jobId, workspaceId) {
+    const card = scrapeJobsList.querySelector(`[data-job-id="${CSS.escape(jobId)}"]`);
+    if (!card) return;
+
+    const runBtn = card.querySelector(".btn-job-run");
+    const progressArea = card.querySelector(".scrape-job-progress");
+    const progressFill = card.querySelector(".scrape-job-progress-bar-fill");
+    const progressStatus = card.querySelector(".scrape-job-progress-status");
+
+    // Mark as running
+    card.classList.add("job-running");
+    if (runBtn) { runBtn.disabled = true; }
+    progressArea.classList.add("visible");
+    progressFill.style.width = "0%";
+    progressStatus.textContent = "Discovering pages\u2026";
+
+    const runUrl = `/${workspaceId}/scrape/jobs/${jobId}/run`;
+
+    try {
+        const res = await fetch(runUrl, { method: "POST" });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.detail || `Run failed (${res.status})`);
         }
 
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
         let buffer = "";
+
+        let totalUrls = 0;
+        let processedUrls = 0;
 
         while (true) {
             const { done, value } = await reader.read();
@@ -902,369 +1144,148 @@ scrapeProcessBtn.addEventListener("click", async () => {
                 if (!payload) continue;
 
                 if (payload === "[DONE]") {
-                    let summary = `${completedCount} page${completedCount !== 1 ? "s" : ""} added`;
-                    if (failedCount > 0) summary += `, ${failedCount} failed`;
-                    scrapeCounter.textContent = summary;
-                    setTimeout(() => { scrapeCounter.textContent = ""; }, 3000);
+                    progressFill.style.width = "100%";
+                    progressStatus.textContent = "Complete";
+                    setTimeout(() => {
+                        progressArea.classList.remove("visible");
+                        progressFill.style.width = "0%";
+                        progressStatus.textContent = "";
+                    }, 2500);
 
-                    // Collapse the discovery panel
-                    scrapeDiscovery.classList.remove("visible");
-                    rebuildScrapeCheckboxes();
-                    refreshScrapeFilterBar();
-
-                    isScraping = false;
-                    resetScrapeForm();
-                    scrapeProcessBtn.disabled = false;
-                    scrapeProcessBtn.textContent = "Add to knowledge base";
+                    card.classList.remove("job-running");
+                    if (runBtn) runBtn.disabled = false;
                     return;
                 }
 
                 try {
                     const event = JSON.parse(payload);
-                    const row = rows[event.url];
-                    if (!row) continue;
 
-                    if (event.status === "error") {
-                        row.classList.remove("scraping");
-                        row.classList.add("scrape-error");
-                        row.querySelector(".file-info .date").textContent = event.message || "Download failed";
-                        const indicator = row.querySelector(".upload-indicator");
-                        if (indicator) indicator.remove();
-                        failedCount++;
-                        updateScrapeCounter();
+                    if (event.status === "discovering") {
+                        progressStatus.textContent = "Discovering pages\u2026";
+                    } else if (event.status === "discovered") {
+                        totalUrls = event.count || 0;
+                        progressStatus.textContent = `Found ${totalUrls} page${totalUrls !== 1 ? "s" : ""}. Processing\u2026`;
                     } else if (event.status === "done") {
-                        completedCount++;
-                        updateScrapeCounter();
-                        transformToCompletedScrape(row, event);
-                    } else {
-                        const fill = row.querySelector(".progress-bar-fill");
-                        const label = row.querySelector(".progress-label");
-                        const dateEl = row.querySelector(".file-info .date");
-                        const pct = steps[event.status] || 0;
+                        // Final summary from server
+                        const pageCount = event.page_count || 0;
+                        const pageCountEl = card.querySelector(".scrape-job-page-count");
+                        if (pageCountEl) pageCountEl.textContent = `${pageCount} page${pageCount !== 1 ? "s" : ""}`;
 
-                        fill.style.width = pct + "%";
-                        label.textContent = pct + "%";
-                        dateEl.textContent = statusLabels[event.status] || event.status;
+                        // Update the toggle button count badge
+                        const toggleCount = card.querySelector(".job-pages-toggle-count");
+                        if (toggleCount) toggleCount.textContent = `(${pageCount})`;
+                        else {
+                            const toggleBtn = card.querySelector(".btn-job-pages-toggle");
+                            if (toggleBtn && pageCount > 0) {
+                                // Add the badge if it didn't exist
+                                const span = document.createElement("span");
+                                span.className = "job-pages-toggle-count";
+                                span.textContent = `(${pageCount})`;
+                                toggleBtn.appendChild(span);
+                            }
+                        }
+
+                        // Mark the pages panel as stale so it re-fetches on next open
+                        const pagesPanel = card.querySelector(".scrape-job-pages-panel");
+                        if (pagesPanel) {
+                            pagesPanel.dataset.loaded = "false";
+                            // If the panel is currently open, refresh it now
+                            if (pagesPanel.classList.contains("visible")) {
+                                const listEl = pagesPanel.querySelector(".scrape-job-pages-list");
+                                listEl.innerHTML = '<div class="job-pages-loading">Refreshing\u2026</div>';
+                                fetch(pagesPanel.dataset.pagesUrl)
+                                    .then(r => r.json())
+                                    .then(pages => {
+                                        pagesPanel.dataset.loaded = "true";
+                                        renderJobPages(listEl, pages, card);
+                                    })
+                                    .catch(() => { listEl.innerHTML = '<div class="job-pages-empty">Failed to reload pages.</div>'; });
+                            }
+                        }
+
+                        // Refresh last scraped time via a quick GET
+                        refreshJobCardMeta(card, jobId, workspaceId);
+                    } else if (["new", "changed", "unchanged", "removed"].includes(event.status)) {
+                        processedUrls++;
+                        const pct = totalUrls > 0 ? Math.round((processedUrls / totalUrls) * 95) : 50;
+                        progressFill.style.width = pct + "%";
+
+                        const label = event.status === "new" ? "Adding" :
+                                      event.status === "changed" ? "Updating" :
+                                      event.status === "removed" ? "Removing" : "Checking";
+                        progressStatus.textContent = `${label}: ${event.url}`;
+                    } else if (event.status === "error" && event.url) {
+                        // Per-URL error — continue
+                        processedUrls++;
+                    } else if (event.status === "error") {
+                        progressStatus.textContent = "Error: " + (event.message || "Unknown error");
                     }
                 } catch (e) {
-                    console.warn("Skipping unparseable scrape payload:", payload);
+                    console.warn("Skipping unparseable job event:", payload);
                 }
             }
         }
     } catch (err) {
-        console.error("Scrape processing error:", err);
-        // Mark remaining rows as errors
-        for (const [url, row] of Object.entries(rows)) {
-            if (row.classList.contains("scraping")) {
-                row.classList.remove("scraping");
-                row.classList.add("scrape-error");
-                row.querySelector(".file-info .date").textContent = "Download failed";
-                const indicator = row.querySelector(".upload-indicator");
-                if (indicator) indicator.remove();
-            }
-        }
-        scrapeCounter.textContent = "Download failed";
-        setTimeout(() => { scrapeCounter.textContent = ""; }, 3000);
-
-        isScraping = false;
-        scrapeBtn.disabled = false;
-        scrapeProcessBtn.disabled = false;
-        scrapeProcessBtn.textContent = "Add to knowledge base";
+        console.error("Job run error:", err);
+        progressStatus.textContent = "Run failed: " + err.message;
+        setTimeout(() => {
+            progressArea.classList.remove("visible");
+        }, 3000);
+    } finally {
+        card.classList.remove("job-running");
+        if (runBtn) runBtn.disabled = false;
     }
-});
-
-function transformToCompletedScrape(row, event) {
-    const fileId = event.location;
-    const displayName = event.name;
-    const sourceUrl = event.url;
-    const category = event.category || scrapeCategoryInput.value.trim() || "default";
-
-    const now = new Date();
-    const dateStr = now.toLocaleString("en-US", {
-        month: "short", day: "numeric", year: "numeric",
-        hour: "numeric", minute: "2-digit",
-    });
-
-    row.className = "file_card just-completed";
-    row.setAttribute("data-extension", ".html");
-    row.setAttribute("data-filename", displayName);
-    row.setAttribute("data-category", category);
-    row.setAttribute("data-source-url", sourceUrl);
-    row.setAttribute("data-date", now.toISOString());
-    row.innerHTML = `
-        <input type="checkbox" class="file-checkbox scrape-file-checkbox" data-id="${escHtml(fileId)}">
-        <span class="ext-badge ext-web">WEB</span>
-        <div class="file-info">
-            <div class="filename">${escHtml(displayName)}</div>
-            <div class="date source-url" title="${escHtml(sourceUrl)}">${escHtml(sourceUrl)}</div>
-        </div>
-        <button class="btn-delete" data-id="${escHtml(fileId)}">Delete</button>
-    `;
-
-    // Wire up delete
-    attachDeleteHandler(row.querySelector(".btn-delete"));
-
-    row.addEventListener("animationend", () => {
-        row.classList.remove("just-completed");
-    }, { once: true });
 }
 
-/* ---------- Downloaded Websites: Checkboxes & Selection ---------- */
+async function refreshJobCardMeta(card, jobId, workspaceId) {
+    try {
+        const res = await fetch(`/${workspaceId}/scrape/jobs`);
+        if (!res.ok) return;
+        const jobs = await res.json();
+        const job = jobs.find(j => j.id === jobId);
+        if (job) updateJobCard(card, job);
+    } catch (e) {
+        // Non-critical — ignore
+    }
+}
 
-let scrapeCheckboxes = Array.from(scrapeFileDisplay.querySelectorAll(".scrape-file-checkbox"));
-let scrapeLastCheckedIndex = null;
+/* ---------- Background job polling ---------- */
+// If any job card is in running state when the page loads (background scheduler run),
+// poll every 5 seconds to refresh status and hide the spinner when done.
 
-function rebuildScrapeCheckboxes() {
-    scrapeCheckboxes = Array.from(scrapeFileDisplay.querySelectorAll(".scrape-file-checkbox"));
-    scrapeLastCheckedIndex = null;
+function startPollingIfNeeded() {
+    const workspaceId = scrapeJobsPanel.dataset.workspaceId;
+    const runningCards = Array.from(scrapeJobsList.querySelectorAll(".scrape-job-card.job-running"));
+    if (runningCards.length === 0) return;
 
-    scrapeCheckboxes.forEach((cb, index) => {
-        const newCb = cb.cloneNode(true);
-        cb.parentNode.replaceChild(newCb, cb);
-        scrapeCheckboxes[index] = newCb;
+    const interval = setInterval(async () => {
+        try {
+            const res = await fetch(`/${workspaceId}/scrape/jobs`);
+            if (!res.ok) return;
+            const jobs = await res.json();
+            const jobMap = Object.fromEntries(jobs.map(j => [j.id, j]));
 
-        newCb.addEventListener("click", (e) => {
-            if (e.shiftKey && scrapeLastCheckedIndex !== null) {
-                const start = Math.min(scrapeLastCheckedIndex, index);
-                const end = Math.max(scrapeLastCheckedIndex, index);
-                const checked = newCb.checked;
-                for (let i = start; i <= end; i++) {
-                    scrapeCheckboxes[i].checked = checked;
+            let stillRunning = false;
+            scrapeJobsList.querySelectorAll(".scrape-job-card").forEach(card => {
+                const job = jobMap[card.dataset.jobId];
+                if (job) {
+                    updateJobCard(card, job);
+                    if (job.is_running) stillRunning = true;
                 }
-            }
-            scrapeLastCheckedIndex = index;
-            updateScrapeSelection();
-        });
-    });
-}
+            });
 
-function updateScrapeSelection() {
-    const selected = scrapeCheckboxes.filter((cb) => cb.checked);
-
-    scrapeCheckboxes.forEach((cb) => {
-        cb.closest(".file_card").classList.toggle("selected", cb.checked);
-    });
-
-    if (selected.length > 0) {
-        scrapeBulkActions.classList.add("visible");
-        scrapeSelectedCountEl.textContent = selected.length;
-    } else {
-        scrapeBulkActions.classList.remove("visible");
-    }
-
-    syncScrapeSelectAll();
-}
-
-function syncScrapeSelectAll() {
-    const visibleCheckboxes = scrapeCheckboxes.filter(
-        (cb) => !cb.closest(".file_card").classList.contains("filtered-out")
-    );
-    if (visibleCheckboxes.length === 0) {
-        scrapeFilesSelectAllCb.checked = false;
-        scrapeFilesSelectAllCb.indeterminate = false;
-        return;
-    }
-    const checkedCount = visibleCheckboxes.filter((cb) => cb.checked).length;
-    if (checkedCount === 0) {
-        scrapeFilesSelectAllCb.checked = false;
-        scrapeFilesSelectAllCb.indeterminate = false;
-    } else if (checkedCount === visibleCheckboxes.length) {
-        scrapeFilesSelectAllCb.checked = true;
-        scrapeFilesSelectAllCb.indeterminate = false;
-    } else {
-        scrapeFilesSelectAllCb.checked = false;
-        scrapeFilesSelectAllCb.indeterminate = true;
-    }
-}
-
-// Select-all for downloaded websites
-scrapeFilesSelectAllCb.addEventListener("change", () => {
-    const isChecked = scrapeFilesSelectAllCb.checked;
-    scrapeCheckboxes.forEach((cb) => {
-        const card = cb.closest(".file_card");
-        if (!card.classList.contains("filtered-out")) {
-            cb.checked = isChecked;
+            if (!stillRunning) clearInterval(interval);
+        } catch (e) {
+            // ignore
         }
-    });
-    updateScrapeSelection();
-});
-
-// Initial setup
-rebuildScrapeCheckboxes();
-
-// Attach delete handlers to existing scraped file cards
-scrapeFileDisplay.querySelectorAll(".btn-delete").forEach(attachDeleteHandler);
-
-/* ---------- Downloaded Websites: Bulk Delete ---------- */
-
-scrapeBulkDeleteBtn.addEventListener("click", async () => {
-    const selected = scrapeCheckboxes.filter((cb) => cb.checked);
-    const fileIds = selected.map((cb) => cb.dataset.id);
-
-    if (!fileIds.length) return;
-
-    const count = fileIds.length;
-    if (!confirm(`Delete ${count} downloaded page${count > 1 ? "s" : ""}?`)) return;
-
-    scrapeBulkDeleteBtn.disabled = true;
-    scrapeBulkDeleteBtn.innerHTML = '<span class="btn-spinner"></span>Deleting...';
-
-    deleteOverlayTitle.textContent = `Deleting ${count} page${count > 1 ? "s" : ""}...`;
-    deleteOverlayMsg.textContent = count >= 5
-        ? "This may take a moment for larger selections."
-        : "Removing from workspace...";
-    deleteOverlay.classList.add("visible");
-
-    const res = await fetch("/delete-bulk", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ file_ids: fileIds }),
-    });
-
-    if (res.ok) {
-        const result = await res.json();
-        const deletedIds = new Set(result.deleted || []);
-        selected.forEach((cb) => {
-            if (deletedIds.has(cb.dataset.id)) {
-                cb.closest(".file_card").remove();
-            }
-        });
-        rebuildScrapeCheckboxes();
-        updateScrapeSelection();
-        refreshScrapeFilterBar();
-    } else {
-        alert("Failed to delete selected pages.");
-    }
-
-    scrapeBulkDeleteBtn.disabled = false;
-    scrapeBulkDeleteBtn.textContent = "Delete Selected";
-    deleteOverlay.classList.remove("visible");
-});
-
-/* ---------- Downloaded Websites: Category Filter Bar ---------- */
-
-let activeScrapeFilter = "all";
-
-function refreshScrapeFilterBar() {
-    const cards = Array.from(scrapeFileDisplay.querySelectorAll(".file_card:not(.scraping):not(.scrape-error)"));
-    const catSet = new Set();
-    cards.forEach((card) => {
-        const cat = card.dataset.category;
-        if (cat) catSet.add(cat);
-    });
-
-    const cats = Array.from(catSet).sort();
-
-    scrapeFilterBar.innerHTML = "";
-
-    const allPill = document.createElement("button");
-    allPill.className = "filter-pill" + (activeScrapeFilter === "all" ? " active" : "");
-    allPill.dataset.cat = "all";
-    allPill.textContent = "All";
-    scrapeFilterBar.appendChild(allPill);
-
-    cats.forEach((cat) => {
-        const pill = document.createElement("button");
-        pill.className = "filter-pill" + (activeScrapeFilter === cat ? " active" : "");
-        pill.dataset.cat = cat;
-        pill.textContent = cat;
-        scrapeFilterBar.appendChild(pill);
-    });
-
-    attachScrapeFilterHandlers();
+    }, 5000);
 }
 
-function attachScrapeFilterHandlers() {
-    scrapeFilterBar.querySelectorAll(".filter-pill").forEach((pill) => {
-        pill.addEventListener("click", () => {
-            activeScrapeFilter = pill.dataset.cat;
-            scrapeFilterBar.querySelectorAll(".filter-pill").forEach((p) => p.classList.remove("active"));
-            pill.classList.add("active");
-            applyScrapeFilter();
-        });
-    });
-}
-
-function applyScrapeFilter() {
-    const cards = scrapeFileDisplay.querySelectorAll(".file_card");
-    cards.forEach((card) => {
-        if (activeScrapeFilter === "all") {
-            card.classList.remove("filtered-out");
-        } else {
-            const cat = card.dataset.category || "";
-            if (cat === activeScrapeFilter) {
-                card.classList.remove("filtered-out");
-            } else {
-                card.classList.add("filtered-out");
-            }
-        }
-    });
-
-    // Uncheck anything that's now hidden
-    scrapeCheckboxes.forEach((cb) => {
-        const card = cb.closest(".file_card");
-        if (card.classList.contains("filtered-out")) {
-            cb.checked = false;
-        }
-    });
-
-    updateScrapeSelection();
-}
-
-// Initial attachment
-attachScrapeFilterHandlers();
-
-/* ---------- Downloaded Websites: Sort ---------- */
-
-scrapeSortSelect.addEventListener("change", () => {
-    applyScrapeSort(scrapeSortSelect.value);
-});
-
-function applyScrapeSort(mode) {
-    const cards = Array.from(scrapeFileDisplay.querySelectorAll(".file_card:not(.scraping):not(.scrape-error)"));
-
-    cards.sort((a, b) => {
-        switch (mode) {
-            case "az": {
-                const nameA = (a.dataset.filename || "").toLowerCase();
-                const nameB = (b.dataset.filename || "").toLowerCase();
-                return nameA.localeCompare(nameB);
-            }
-            case "za": {
-                const nameA = (a.dataset.filename || "").toLowerCase();
-                const nameB = (b.dataset.filename || "").toLowerCase();
-                return nameB.localeCompare(nameA);
-            }
-            case "newest": {
-                const dateA = a.dataset.date || "";
-                const dateB = b.dataset.date || "";
-                return dateB.localeCompare(dateA);
-            }
-            case "oldest": {
-                const dateA = a.dataset.date || "";
-                const dateB = b.dataset.date || "";
-                return dateA.localeCompare(dateB);
-            }
-            case "category": {
-                const catA = (a.dataset.category || "").toLowerCase();
-                const catB = (b.dataset.category || "").toLowerCase();
-                const cmp = catA.localeCompare(catB);
-                if (cmp !== 0) return cmp;
-                return (a.dataset.filename || "").toLowerCase().localeCompare((b.dataset.filename || "").toLowerCase());
-            }
-            default:
-                return 0;
-        }
-    });
-
-    cards.forEach((card) => scrapeFileDisplay.appendChild(card));
-    rebuildScrapeCheckboxes();
-}
+startPollingIfNeeded();
 
 /* ========== Upload Search Bar ========== */
 
 let uploadSearchTerm = "";
-
 const uploadSearchBar = document.getElementById("uploadSearchBar");
 if (uploadSearchBar) {
     uploadSearchBar.addEventListener("input", () => {
@@ -1278,7 +1299,6 @@ if (uploadSearchBar) {
 let activeFilter = "all";
 
 function refreshFilterBar() {
-    // Gather current extensions from DOM cards
     const cards = Array.from(fileDisplay.querySelectorAll(".file_card:not(.uploading):not(.upload-error)"));
     const extSet = new Set();
     cards.forEach((card) => {
@@ -1289,7 +1309,6 @@ function refreshFilterBar() {
     const filterBar = document.getElementById("filterBar");
     const exts = Array.from(extSet).sort();
 
-    // Rebuild pills
     filterBar.innerHTML = "";
 
     const allPill = document.createElement("button");
@@ -1306,15 +1325,14 @@ function refreshFilterBar() {
         filterBar.appendChild(pill);
     });
 
-    // Reattach click handlers
     attachFilterHandlers();
 }
 
 function attachFilterHandlers() {
-    document.querySelectorAll(".filter-pill").forEach((pill) => {
+    document.querySelectorAll("#filterBar .filter-pill").forEach((pill) => {
         pill.addEventListener("click", () => {
             activeFilter = pill.dataset.ext;
-            document.querySelectorAll(".filter-pill").forEach((p) => p.classList.remove("active"));
+            document.querySelectorAll("#filterBar .filter-pill").forEach((p) => p.classList.remove("active"));
             pill.classList.add("active");
             applyCurrentFilter();
         });
@@ -1336,18 +1354,14 @@ function applyCurrentFilter() {
         }
     });
 
-    // Uncheck anything that's now hidden
     checkboxes.forEach((cb) => {
         const card = cb.closest(".file_card");
-        if (card.classList.contains("filtered-out")) {
-            cb.checked = false;
-        }
+        if (card.classList.contains("filtered-out")) cb.checked = false;
     });
 
     updateSelection();
 }
 
-// Initial attachment
 attachFilterHandlers();
 
 /* ========== Sort ========== */
@@ -1363,40 +1377,19 @@ function applySort(mode) {
 
     cards.sort((a, b) => {
         switch (mode) {
-            case "az": {
-                const nameA = (a.dataset.filename || "").toLowerCase();
-                const nameB = (b.dataset.filename || "").toLowerCase();
-                return nameA.localeCompare(nameB);
-            }
-            case "za": {
-                const nameA = (a.dataset.filename || "").toLowerCase();
-                const nameB = (b.dataset.filename || "").toLowerCase();
-                return nameB.localeCompare(nameA);
-            }
-            case "newest": {
-                const dateA = a.dataset.date || "";
-                const dateB = b.dataset.date || "";
-                return dateB.localeCompare(dateA);
-            }
-            case "oldest": {
-                const dateA = a.dataset.date || "";
-                const dateB = b.dataset.date || "";
-                return dateA.localeCompare(dateB);
-            }
+            case "az": return (a.dataset.filename || "").toLowerCase().localeCompare((b.dataset.filename || "").toLowerCase());
+            case "za": return (b.dataset.filename || "").toLowerCase().localeCompare((a.dataset.filename || "").toLowerCase());
+            case "newest": return (b.dataset.date || "").localeCompare(a.dataset.date || "");
+            case "oldest": return (a.dataset.date || "").localeCompare(b.dataset.date || "");
             case "ext": {
-                const extA = (a.dataset.extension || "").toLowerCase();
-                const extB = (b.dataset.extension || "").toLowerCase();
-                const cmp = extA.localeCompare(extB);
+                const cmp = (a.dataset.extension || "").toLowerCase().localeCompare((b.dataset.extension || "").toLowerCase());
                 if (cmp !== 0) return cmp;
-                // Secondary sort by name within same extension
                 return (a.dataset.filename || "").toLowerCase().localeCompare((b.dataset.filename || "").toLowerCase());
             }
-            default:
-                return 0;
+            default: return 0;
         }
     });
 
-    // Re-append in sorted order (uploading cards stay at top)
     cards.forEach((card) => fileDisplay.appendChild(card));
     rebuildCheckboxes();
 }
@@ -1417,3 +1410,4 @@ function setupCollapseBtn(btnId, panelEl) {
 
 setupCollapseBtn("uploadCollapseBtn", document.querySelector(".workflow-upload"));
 setupCollapseBtn("scrapeCollapseBtn", document.querySelector(".workflow-scrape"));
+setupCollapseBtn("jobsCollapseBtn", document.querySelector(".workflow-jobs"));

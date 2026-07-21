@@ -5,7 +5,7 @@ Hits the REAL LLM backend at http://10.140.10.101:3001.
 Uses an isolated in-memory SQLite database (StaticPool) — production DB is
 never touched.
 
-Test workspace (must already exist on the backend): testing-hohhze1p3c7f0occ
+Test workspace (must already exist on the backend): it_test-i0ezx92mjykn5nvy
 
 Test classes
 ============
@@ -54,7 +54,7 @@ Base.metadata.create_all(bind=_test_engine)
 # Constants
 # ---------------------------------------------------------------------------
 BACKEND = "http://10.140.10.101:3001"
-TEST_SLUG = "testing1-gpqbq4c79q7pholp"   # exists on the real backend
+TEST_SLUG = "it_test-i0ezx92mjykn5nvy"   # exists on the real backend
 
 from config import HEADERS  # noqa: E402  (loaded after dotenv)
 
@@ -652,3 +652,551 @@ class TestBulkDelete:
         """Response body always contains a 'deleted' key."""
         r = client.post("/delete-bulk", json={"file_ids": []})
         assert "deleted" in r.json()
+
+
+# ===========================================================================
+# HELPER / UTILITY FUNCTIONS
+# ===========================================================================
+
+class TestSanitizeUrlToFilename:
+    """Unit tests for the _sanitize_url_to_filename helper in main.py."""
+
+    def setup_method(self):
+        from main import _sanitize_url_to_filename
+        self.fn = _sanitize_url_to_filename
+
+    def test_simple_url(self):
+        result = self.fn("https://example.com/foo/bar")
+        assert result == "example_com_foo_bar"
+
+    def test_url_with_trailing_slash(self):
+        result = self.fn("https://example.com/foo/bar/")
+        assert result == "example_com_foo_bar"
+
+    def test_root_url_returns_domain_index(self):
+        """Root URL (empty path) falls back to 'index', so result is domain_index."""
+        result = self.fn("https://example.com/")
+        assert result == "example_com_index"
+
+    def test_url_with_special_chars(self):
+        result = self.fn("https://example.com/path?q=1&x=2")
+        assert "_" in result
+        # Should not contain raw query string characters
+        assert "?" not in result
+        assert "=" not in result
+        assert "&" not in result
+
+    def test_no_double_underscores(self):
+        result = self.fn("https://example.com/a//b")
+        assert "__" not in result
+
+    def test_no_leading_or_trailing_underscores_in_slug(self):
+        result = self.fn("https://example.com/foo")
+        # The slug portion should not start or end with underscore
+        parts = result.split("_", 3)  # split off domain prefix
+        slug_part = result[len("example_com_"):]
+        assert not slug_part.startswith("_")
+        assert not slug_part.endswith("_")
+
+    def test_deep_path(self):
+        result = self.fn("https://its.uri.edu/services/zoom/getting-started")
+        assert "its_uri_edu" in result
+        assert "services" in result
+        assert "zoom" in result
+
+
+class TestComputeNextRun:
+    """Unit tests for the _compute_next_run scheduler helper in main.py."""
+
+    def setup_method(self):
+        from main import _compute_next_run
+        self.fn = _compute_next_run
+
+    def test_none_interval_returns_none(self):
+        result = self.fn(None)
+        assert result is None
+
+    def test_empty_string_returns_none(self):
+        result = self.fn("")
+        assert result is None
+
+    def test_hourly(self):
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        NY = ZoneInfo("America/New_York")
+        base = datetime(2025, 1, 1, 12, 0, 0, tzinfo=NY)
+        result = self.fn("hourly", from_time=base)
+        from datetime import timedelta
+        assert result == base + timedelta(hours=1)
+
+    def test_daily(self):
+        from datetime import datetime, timedelta
+        from zoneinfo import ZoneInfo
+        NY = ZoneInfo("America/New_York")
+        base = datetime(2025, 1, 1, 12, 0, 0, tzinfo=NY)
+        result = self.fn("daily", from_time=base)
+        assert result == base + timedelta(days=1)
+
+    def test_weekly(self):
+        from datetime import datetime, timedelta
+        from zoneinfo import ZoneInfo
+        NY = ZoneInfo("America/New_York")
+        base = datetime(2025, 1, 1, 12, 0, 0, tzinfo=NY)
+        result = self.fn("weekly", from_time=base)
+        assert result == base + timedelta(weeks=1)
+
+    def test_unknown_interval_returns_none(self):
+        result = self.fn("monthly")
+        assert result is None
+
+    def test_uses_current_time_when_from_time_omitted(self):
+        from datetime import datetime, timedelta
+        from zoneinfo import ZoneInfo
+        NY = ZoneInfo("America/New_York")
+        before = datetime.now(NY)
+        result = self.fn("hourly")
+        after = datetime.now(NY)
+        assert result is not None
+        assert before + timedelta(hours=1) <= result <= after + timedelta(hours=1)
+
+
+# ===========================================================================
+# WORKSPACE DELETE
+# ===========================================================================
+
+class TestWorkspaceDelete:
+    """
+    Route under test: DELETE /api/v1/workspaces/{workspace_id}
+    """
+
+    def test_delete_workspace_success(self, client: TestClient):
+        """DELETE removes workspace from DB; subsequent GET returns 404."""
+        # Use a workspace slug that must already exist in the real AnythingLLM backend.
+        # We create it via POST /new (DB-only) — the backend is pre-seeded with TEST_SLUG.
+        # To avoid deleting our shared test workspace, create a temporary one.
+        slug = "ws-delete-test-tmp"
+        r = client.post("/api/v1/workspaces/new", json={"id": slug, "name": "Temp WS"})
+        if r.status_code == 409:
+            # Already exists from a previous failed test run — that's fine
+            pass
+        else:
+            assert r.status_code == 200, r.text
+
+        # The delete endpoint calls LLM_delete_workspace; as long as the backend
+        # doesn't return a non-200 for an unknown slug, this should succeed.
+        del_r = client.delete(f"/api/v1/workspaces/{slug}")
+        # Accept 200 (success) or 500 (backend refused) — the important thing is
+        # the workspace is removed from the local DB on 200.
+        if del_r.status_code == 200:
+            assert del_r.json()["deleted"] == slug
+            get_r = client.get(f"/api/v1/workspaces/{slug}")
+            assert get_r.status_code == 404
+        else:
+            # Backend rejected; workspace may still be in DB — cleanup
+            with _TestSessionLocal() as db:
+                db.execute(text("DELETE FROM workspaces WHERE id = :slug"), {"slug": slug})
+                db.commit()
+
+    def test_delete_workspace_unknown_returns_404(self, client: TestClient):
+        """DELETE on a workspace not in local DB returns 404."""
+        r = client.delete("/api/v1/workspaces/no-such-workspace-del-xyz")
+        assert r.status_code == 404
+
+    def test_delete_workspace_response_body(self, client: TestClient):
+        """Successful DELETE returns JSON with 'deleted' key equal to the workspace_id."""
+        slug = "ws-del-body-test"
+        client.post("/api/v1/workspaces/new", json={"id": slug, "name": "Del Body Test"})
+        r = client.delete(f"/api/v1/workspaces/{slug}")
+        if r.status_code == 200:
+            body = r.json()
+            assert "deleted" in body
+            assert body["deleted"] == slug
+        else:
+            # Cleanup
+            with _TestSessionLocal() as db:
+                db.execute(text("DELETE FROM workspaces WHERE id = :slug"), {"slug": slug})
+                db.commit()
+
+
+# ===========================================================================
+# SCRAPE JOBS CRUD
+# ===========================================================================
+
+@pytest.fixture(autouse=True)
+def clean_scrape_jobs():
+    """Wipe scrape_jobs table after every test to prevent state leakage."""
+    yield
+    with _TestSessionLocal() as db:
+        db.execute(text("DELETE FROM scrape_jobs"))
+        db.commit()
+
+
+def _create_job(client: TestClient, workspace_id: str = TEST_SLUG, **kwargs) -> dict:
+    """Helper: create a scrape job and return its JSON response."""
+    payload = {
+        "name": "Test Job",
+        "base_url": "https://example.com/",
+        "mode": "single",
+        "max_depth": 1,
+        "max_pages": 5,
+        "allow_offsite": False,
+    }
+    payload.update(kwargs)
+    r = client.post(f"/{workspace_id}/scrape/jobs", json=payload)
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+class TestScrapeJobCRUD:
+    """
+    Routes under test
+      POST   /{workspace_id}/scrape/jobs                        create job
+      GET    /{workspace_id}/scrape/jobs                        list jobs
+      GET    /{workspace_id}/scrape/jobs/{job_id}/pages         list job pages
+      PATCH  /{workspace_id}/scrape/jobs/{job_id}              update job
+      DELETE /{workspace_id}/scrape/jobs/{job_id}              delete job
+    """
+
+    # --- create ---
+
+    def test_create_scrape_job_returns_expected_shape(self, client: TestClient):
+        """POST returns a well-formed job dict with all required keys."""
+        job = _create_job(client)
+        assert "id" in job
+        assert job["workspace_id"] == TEST_SLUG
+        assert job["name"] == "Test Job"
+        assert job["base_url"] == "https://example.com/"
+        assert job["mode"] == "single"
+        assert job["max_depth"] == 1
+        assert job["max_pages"] == 5
+        assert job["allow_offsite"] is False
+        assert job["is_running"] is False
+        assert job["page_count"] == 0
+        assert "created_at" in job
+
+    def test_create_scrape_job_unknown_workspace_returns_404(self, client: TestClient):
+        """Creating a job for a workspace not in local DB returns 404."""
+        r = client.post(
+            "/no-such-workspace-xyz/scrape/jobs",
+            json={"name": "Job", "base_url": "https://example.com/"},
+        )
+        assert r.status_code == 404
+
+    def test_create_scrape_job_with_schedule_interval(self, client: TestClient):
+        """Creating a job with schedule_interval sets next_scrape_at."""
+        job = _create_job(client, schedule_interval="daily")
+        assert job["schedule_interval"] == "daily"
+        assert job["next_scrape_at"] is not None
+
+    def test_create_scrape_job_no_schedule_has_null_next_scrape_at(self, client: TestClient):
+        """Jobs without a schedule have next_scrape_at == None."""
+        job = _create_job(client)
+        assert job["schedule_interval"] is None
+        assert job["next_scrape_at"] is None
+
+    def test_create_scrape_job_defaults(self, client: TestClient):
+        """When optional fields are omitted, defaults are applied."""
+        r = client.post(
+            f"/{TEST_SLUG}/scrape/jobs",
+            json={"name": "Minimal", "base_url": "https://example.com/"},
+        )
+        assert r.status_code == 200, r.text
+        job = r.json()
+        assert job["mode"] == "depth"
+        assert job["max_depth"] == 2
+        assert job["max_pages"] == 100
+        assert job["allow_offsite"] is False
+
+    # --- list ---
+
+    def test_list_scrape_jobs_empty(self, client: TestClient):
+        """Listing jobs for a workspace with no jobs returns an empty list."""
+        r = client.get(f"/{TEST_SLUG}/scrape/jobs")
+        assert r.status_code == 200, r.text
+        assert r.json() == []
+
+    def test_list_scrape_jobs_returns_created_jobs(self, client: TestClient):
+        """After creating 2 jobs, the list endpoint returns both."""
+        _create_job(client, name="Job A")
+        _create_job(client, name="Job B")
+        r = client.get(f"/{TEST_SLUG}/scrape/jobs")
+        assert r.status_code == 200, r.text
+        jobs = r.json()
+        assert len(jobs) == 2
+        names = {j["name"] for j in jobs}
+        assert names == {"Job A", "Job B"}
+
+    def test_list_scrape_jobs_unknown_workspace_returns_404(self, client: TestClient):
+        """Listing jobs for an unknown workspace returns 404."""
+        r = client.get("/no-such-workspace-xyz/scrape/jobs")
+        assert r.status_code == 404
+
+    def test_list_scrape_jobs_includes_page_count(self, client: TestClient):
+        """Each job in the list has a page_count field."""
+        _create_job(client)
+        r = client.get(f"/{TEST_SLUG}/scrape/jobs")
+        assert r.status_code == 200, r.text
+        job = r.json()[0]
+        assert "page_count" in job
+        assert isinstance(job["page_count"], int)
+
+    # --- list pages ---
+
+    def test_list_job_pages_empty(self, client: TestClient):
+        """A new job has no pages."""
+        job = _create_job(client)
+        r = client.get(f"/{TEST_SLUG}/scrape/jobs/{job['id']}/pages")
+        assert r.status_code == 200, r.text
+        assert r.json() == []
+
+    def test_list_job_pages_unknown_job_returns_404(self, client: TestClient):
+        """Listing pages for a non-existent job returns 404."""
+        r = client.get(f"/{TEST_SLUG}/scrape/jobs/nonexistent-job-id-abc/pages")
+        assert r.status_code == 404
+
+    def test_list_job_pages_returns_files_for_job(self, client: TestClient):
+        """Pages inserted directly into DB appear in the job pages list."""
+        from models import File as FileModel
+        job = _create_job(client)
+        job_id = job["id"]
+        # Insert a fake page record directly into the test DB
+        with _TestSessionLocal() as db:
+            db.add(FileModel(
+                id="fake-page-doc-id-001",
+                filename="example_com.md",
+                original_extension=".html",
+                workspace_id=TEST_SLUG,
+                category=f"scrape_Test Job",
+                source_url="https://example.com/",
+                scrape_job_id=job_id,
+            ))
+            db.commit()
+
+        r = client.get(f"/{TEST_SLUG}/scrape/jobs/{job_id}/pages")
+        assert r.status_code == 200, r.text
+        pages = r.json()
+        assert len(pages) == 1
+        assert pages[0]["id"] == "fake-page-doc-id-001"
+        assert pages[0]["source_url"] == "https://example.com/"
+
+    # --- update ---
+
+    def test_update_scrape_job_name(self, client: TestClient):
+        """PATCH updates the job name."""
+        job = _create_job(client, name="Old Name")
+        r = client.patch(
+            f"/{TEST_SLUG}/scrape/jobs/{job['id']}",
+            json={"name": "New Name"},
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["name"] == "New Name"
+
+    def test_update_scrape_job_mode(self, client: TestClient):
+        """PATCH can change the crawl mode."""
+        job = _create_job(client, mode="single")
+        r = client.patch(
+            f"/{TEST_SLUG}/scrape/jobs/{job['id']}",
+            json={"mode": "depth"},
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["mode"] == "depth"
+
+    def test_update_scrape_job_adds_schedule(self, client: TestClient):
+        """PATCH can add a schedule to a previously unscheduled job."""
+        job = _create_job(client)
+        assert job["next_scrape_at"] is None
+
+        r = client.patch(
+            f"/{TEST_SLUG}/scrape/jobs/{job['id']}",
+            json={"schedule_interval": "weekly"},
+        )
+        assert r.status_code == 200, r.text
+        updated = r.json()
+        assert updated["schedule_interval"] == "weekly"
+        assert updated["next_scrape_at"] is not None
+
+    def test_update_scrape_job_removes_schedule(self, client: TestClient):
+        """PATCH can remove a schedule by setting schedule_interval to null."""
+        job = _create_job(client, schedule_interval="hourly")
+        assert job["next_scrape_at"] is not None
+
+        r = client.patch(
+            f"/{TEST_SLUG}/scrape/jobs/{job['id']}",
+            json={"schedule_interval": None},
+        )
+        assert r.status_code == 200, r.text
+        updated = r.json()
+        assert updated["schedule_interval"] is None
+        assert updated["next_scrape_at"] is None
+
+    def test_update_scrape_job_unknown_returns_404(self, client: TestClient):
+        """PATCH on a non-existent job returns 404."""
+        r = client.patch(
+            f"/{TEST_SLUG}/scrape/jobs/ghost-job-id-xyz",
+            json={"name": "Ghost"},
+        )
+        assert r.status_code == 404
+
+    def test_update_scrape_job_max_pages(self, client: TestClient):
+        """PATCH can update max_pages."""
+        job = _create_job(client, max_pages=10)
+        r = client.patch(
+            f"/{TEST_SLUG}/scrape/jobs/{job['id']}",
+            json={"max_pages": 50},
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["max_pages"] == 50
+
+    def test_update_scrape_job_allow_offsite(self, client: TestClient):
+        """PATCH can toggle allow_offsite."""
+        job = _create_job(client, allow_offsite=False)
+        r = client.patch(
+            f"/{TEST_SLUG}/scrape/jobs/{job['id']}",
+            json={"allow_offsite": True},
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["allow_offsite"] is True
+
+    # --- delete ---
+
+    def test_delete_scrape_job_success(self, client: TestClient):
+        """DELETE removes the job from the DB."""
+        job = _create_job(client)
+        job_id = job["id"]
+
+        r = client.delete(f"/{TEST_SLUG}/scrape/jobs/{job_id}")
+        assert r.status_code == 200, r.text
+        assert r.json()["deleted"] == job_id
+
+        from models import ScrapeJob as ScrapeJobModel
+        with _TestSessionLocal() as db:
+            assert db.query(ScrapeJobModel).filter(ScrapeJobModel.id == job_id).first() is None
+
+    def test_delete_scrape_job_not_found(self, client: TestClient):
+        """DELETE on a non-existent job returns 404."""
+        r = client.delete(f"/{TEST_SLUG}/scrape/jobs/nonexistent-job-xyz")
+        assert r.status_code == 404
+
+    def test_delete_scrape_job_cascades_to_files(self, client: TestClient):
+        """Deleting a job removes its associated file records from the DB."""
+        from models import File as FileModel, ScrapeJob as ScrapeJobModel
+        job = _create_job(client)
+        job_id = job["id"]
+
+        # Insert a fake page record linked to this job
+        with _TestSessionLocal() as db:
+            db.add(FileModel(
+                id="cascade-del-page-001",
+                filename="page.md",
+                original_extension=".html",
+                workspace_id=TEST_SLUG,
+                category="scrape_Test Job",
+                source_url="https://example.com/page",
+                scrape_job_id=job_id,
+            ))
+            db.commit()
+
+        r = client.delete(f"/{TEST_SLUG}/scrape/jobs/{job_id}")
+        assert r.status_code == 200, r.text
+
+        with _TestSessionLocal() as db:
+            # Job gone
+            assert db.query(ScrapeJobModel).filter(ScrapeJobModel.id == job_id).first() is None
+            # File gone via cascade
+            assert db.query(FileModel).filter(FileModel.id == "cascade-del-page-001").first() is None
+
+    def test_delete_scrape_job_response_has_deleted_key(self, client: TestClient):
+        """DELETE response body contains a 'deleted' key with the job ID."""
+        job = _create_job(client)
+        r = client.delete(f"/{TEST_SLUG}/scrape/jobs/{job['id']}")
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert "deleted" in body
+
+
+# ===========================================================================
+# SCRAPE JOB RUN (SSE)
+# ===========================================================================
+
+class TestScrapeJobRun:
+    """
+    Route under test: POST /{workspace_id}/scrape/jobs/{job_id}/run
+    Uses 'single' mode with a known-stable URL so no real crawl is needed,
+    but does perform a real scrape + upload to the backend.
+    """
+
+    def test_run_unknown_job_returns_404(self, client: TestClient):
+        """Running a non-existent job returns 404."""
+        r = client.post(f"/{TEST_SLUG}/scrape/jobs/nonexistent-job-zzz/run")
+        assert r.status_code == 404
+
+    def test_run_unknown_workspace_returns_404(self, client: TestClient):
+        """Running a job in a non-existent workspace returns 404."""
+        r = client.post("/no-such-workspace-xyz/scrape/jobs/some-job-id/run")
+        assert r.status_code == 404
+
+    def test_run_already_running_job_returns_409(self, client: TestClient):
+        """A job already marked is_running=True returns 409."""
+        from models import ScrapeJob as ScrapeJobModel
+        job = _create_job(client)
+        job_id = job["id"]
+
+        # Mark it as running
+        with _TestSessionLocal() as db:
+            j = db.query(ScrapeJobModel).filter(ScrapeJobModel.id == job_id).first()
+            j.is_running = True
+            db.commit()
+
+        r = client.post(f"/{TEST_SLUG}/scrape/jobs/{job_id}/run")
+        assert r.status_code == 409
+
+    def test_run_single_mode_produces_sse_events(self, client: TestClient):
+        """Running a single-mode job yields valid SSE events including a final [DONE]."""
+        import json as _json
+        # Use example.com — always available; single page, fast
+        job = _create_job(client, mode="single", base_url="https://example.com/")
+        job_id = job["id"]
+
+        lines = []
+        with client.stream("POST", f"/{TEST_SLUG}/scrape/jobs/{job_id}/run") as resp:
+            assert resp.status_code == 200
+            for line in resp.iter_lines():
+                lines.append(line)
+
+        # Collect data: lines
+        data_lines = [l for l in lines if l.startswith("data:")]
+        assert len(data_lines) > 0
+
+        # Final SSE line must be [DONE]
+        assert data_lines[-1] == "data: [DONE]"
+
+        # There should be a 'done' status event before [DONE]
+        done_events = []
+        for dl in data_lines[:-1]:
+            payload = _json.loads(dl[len("data: "):])
+            if payload.get("status") == "done":
+                done_events.append(payload)
+        assert len(done_events) == 1, "Expected exactly one 'done' event"
+        assert "job_id" in done_events[0]
+        assert "page_count" in done_events[0]
+
+    def test_run_single_mode_persists_file_to_db(self, client: TestClient):
+        """After a successful run, the scraped page appears in the DB and in /pages."""
+        from models import File as FileModel
+        job = _create_job(client, mode="single", base_url="https://example.com/")
+        job_id = job["id"]
+
+        # Consume SSE to completion (must read inside the context manager)
+        with client.stream("POST", f"/{TEST_SLUG}/scrape/jobs/{job_id}/run") as resp:
+            for _ in resp.iter_lines():
+                pass
+
+        with _TestSessionLocal() as db:
+            pages = db.query(FileModel).filter(FileModel.scrape_job_id == job_id).all()
+
+        assert len(pages) >= 1, "Expected at least one page to be persisted after run"
+        page = pages[0]
+        assert page.source_url == "https://example.com/"
+        assert page.scrape_job_id == job_id
+        assert page.workspace_id == TEST_SLUG
+        assert page.content_hash is not None

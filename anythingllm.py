@@ -11,7 +11,7 @@ from config import HEADERS, API_URL
 
 def LLM_workspace_exists(workspace: str) -> bool:
     """Return True if the workspace slug exists on the RAG backend."""
-    response = requests.get(f"{API_URL}/workspace/{workspace}", headers=HEADERS)
+    response = requests.get(f"{API_URL}/api/workspace/{workspace}", headers=HEADERS)
     if response.status_code == 200:
         return True
     if response.status_code == 404:
@@ -33,7 +33,7 @@ def LLM_upload_document(uploaded_file, file_name: str, workspace: str) -> str:
     document (used as the file's primary key in the local DB).
     """
     response = requests.post(
-        f"{API_URL}/workspace/{workspace}/embed",
+        f"{API_URL}/api/workspace/{workspace}/embed",
         headers=HEADERS,
         files={"file": (file_name, uploaded_file)},
     )
@@ -49,7 +49,7 @@ def LLM_remove_document(workspace: str, doc_id: str) -> bool:
     Returns False only on unexpected errors.
     Retries up to 3 times on transient failures with exponential backoff.
     """
-    url = f"{API_URL}/workspace/{workspace}/embed/{quote(doc_id, safe='')}"
+    url = f"{API_URL}/api/workspace/{workspace}/embed/{quote(doc_id, safe='')}"
     for attempt in range(3):
         try:
             resp = requests.delete(url, headers=HEADERS, timeout=30)
@@ -82,7 +82,7 @@ def LLM_json_workspace_settings(workspace: str):
     Returns a dict with keys: prompt, similarity_threshold, top_n, temperature.
     Returns None on failure.
     """
-    response = requests.get(f"{API_URL}/workspace/{workspace}", headers=HEADERS)
+    response = requests.get(f"{API_URL}/api/workspace/{workspace}", headers=HEADERS)
     if response.status_code != 200:
         logging.error(
             f"Failed to fetch settings for workspace '{workspace}': "
@@ -115,7 +115,7 @@ def LLM_update_workspace_settings(workspace: str, settings: dict) -> bool:
         payload["temperature"] = settings["temperature"]
 
     response = requests.put(
-        f"{API_URL}/workspace/{workspace}",
+        f"{API_URL}/api/workspace/{workspace}",
         headers=HEADERS,
         json=payload,
     )
@@ -135,6 +135,6 @@ def LLM_update_workspace_settings(workspace: str, settings: dict) -> bool:
 def LLM_delete_workspace(workspace_id: str):
     """Delete a workspace from the RAG backend. Returns the requests.Response."""
     return requests.delete(
-        f"{API_URL}/workspace/{workspace_id}",
+        f"{API_URL}/api/workspace/{workspace_id}",
         headers=HEADERS,
     )

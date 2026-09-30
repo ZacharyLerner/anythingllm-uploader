@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" type="text/css" href="{{ url_for('static', path='css/main.css') }}?v=7">
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', path='css/main.css') }}?v=13">
     <title>{{ workspace.name }} - Documents</title>
 </head>
 <body>
@@ -141,7 +141,27 @@
                         </div>
                         <div class="scrape-field scrape-field-category">
                             <label for="scrapeJobName">Job Name</label>
-                            <input type="text" id="scrapeJobName" placeholder="e.g. IT Services Docs" autocomplete="off">
+                            <input type="text" id="scrapeJobName" placeholder="e.g. IT Services Docs" autocomplete="off" aria-describedby="scrapeJobNameError">
+                            <p class="scrape-field-error" id="scrapeJobNameError" role="alert">Job name is required to save a list of websites.</p>
+                        </div>
+                    </div>
+
+                    <!-- Website List -->
+                    <div class="scrape-list-section">
+                        <button type="button" class="scrape-list-toggle" id="scrapeListToggle" aria-expanded="false" aria-controls="scrapeListPanel">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/>
+                                <line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>
+                            </svg>
+                            <span id="scrapeListToggleLabel">Add a list of websites instead</span>
+                        </button>
+                        <div class="scrape-list-panel" id="scrapeListPanel">
+                            <div class="scrape-field">
+                                <label for="scrapeListInput">Website List</label>
+                                <textarea id="scrapeListInput" rows="7" spellcheck="false"
+                                          placeholder="https://example.com/about&#10;https://example.com/contact&#10;docs.example.org/getting-started"></textarea>
+                                <p class="setting-hint">One URL per line. Commas or spaces also work, and duplicates are removed. Each page is added as-is; links on it are not followed.</p>
+                            </div>
                         </div>
                     </div>
 
@@ -300,7 +320,11 @@
                                 </div>
                                 <div class="scrape-job-info">
                                     <div class="scrape-job-name">{{ job.name }}</div>
+                                    {% if job.mode == 'list' and job.urls %}
+                                    <div class="scrape-job-url" title="{{ job.urls | join('\n') }}">{{ job.urls | length }} website{{ 's' if job.urls | length != 1 else '' }} &middot; {{ job.urls[0] }}{% if job.urls | length > 1 %} + {{ job.urls | length - 1 }} more{% endif %}</div>
+                                    {% else %}
                                     <div class="scrape-job-url" title="{{ job.base_url }}">{{ job.base_url }}</div>
+                                    {% endif %}
                                 </div>
                             </div>
                             <div class="scrape-job-card-right">
@@ -384,6 +408,6 @@
         </div>
     </div>
 
-    <script src="{{ url_for('static', path='js/utils.js') }}?v=7"></script>
+    <script src="{{ url_for('static', path='js/utils.js') }}?v=13"></script>
 </body>
 </html>

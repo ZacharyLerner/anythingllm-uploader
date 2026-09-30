@@ -407,6 +407,10 @@ const scrapeSelectAllCb = document.getElementById("scrapeSelectAllCb");
 const scrapeProcessBtn = document.getElementById("scrapeProcessBtn");
 const scrapeCancelBtn = document.getElementById("scrapeCancelBtn");
 const scrapeSaveSchedule = document.getElementById("scrapeSaveSchedule");
+const scrapeListToggle = document.getElementById("scrapeListToggle");
+const scrapeListToggleLabel = document.getElementById("scrapeListToggleLabel");
+const scrapeListPanel = document.getElementById("scrapeListPanel");
+const scrapeListInput = document.getElementById("scrapeListInput");
 
 const discoverUrl = scrapeArea.dataset.discoverUrl;
 const jobsUrl = scrapeArea.dataset.jobsUrl;
@@ -414,6 +418,7 @@ const jobsUrl = scrapeArea.dataset.jobsUrl;
 let discoveredUrls = [];
 let selectedScope = null;
 let selectedDepth = 1;
+let listMode = false;
 
 // Escape HTML to prevent XSS
 function escHtml(str) {
@@ -425,10 +430,48 @@ function escHtml(str) {
 /* ---------- Form extras visibility ---------- */
 
 function updateFormVisibility() {
-    const hasUrl = scrapeUrlInput.value.trim().length > 0;
+    const hasSource = listMode
+        ? countListEntries() > 0
+        : scrapeUrlInput.value.trim().length > 0;
     const hasName = scrapeJobNameInput.value.trim().length > 0;
-    scrapeFormExtras.classList.toggle("visible", hasUrl && hasName);
+    scrapeFormExtras.classList.toggle("visible", hasSource && hasName);
+    scrapeFormExtras.classList.toggle("list-mode", listMode);
+    // In list mode the name is the only thing gating the review step, so call it out
+    scrapeJobNameInput.closest(".scrape-field").classList.toggle("has-error", listMode && !hasName);
+    scrapeJobNameInput.setAttribute("aria-invalid", String(listMode && !hasName));
 }
+
+/* ---------- Website List ---------- */
+
+// Rough client-side count for the live preview; the server does the real parsing on review.
+function countListEntries() {
+    const entries = scrapeListInput.value
+        .split(/[\s,]+/)
+        .map((t) => t.trim().replace(/#.*$/, "").replace(/\/$/, "").toLowerCase())
+        .filter((t) => t && !/^(\d+[.)]|[-*\u2022])$/.test(t));
+    return new Set(entries).size;
+}
+
+function setListMode(on) {
+    listMode = on;
+    scrapeListPanel.classList.toggle("open", on);
+    scrapeListToggle.setAttribute("aria-expanded", String(on));
+    scrapeListToggleLabel.textContent = on
+        ? "Use a single website URL instead"
+        : "Add a list of websites instead";
+    scrapeUrlInput.disabled = on;
+    // Any previous discovery results belong to the other mode
+    scrapeDiscovery.classList.remove("visible");
+    discoveredUrls = [];
+    scrapeUrlList.innerHTML = "";
+    updateFormVisibility();
+    updatePreview();
+    updateSubmitBtn();
+    if (on) scrapeListInput.focus();
+}
+
+scrapeListToggle.addEventListener("click", () => setListMode(!listMode));
+scrapeListInput.addEventListener("input", () => { updateFormVisibility(); updatePreview(); updateSubmitBtn(); });
 
 /* ---------- Advanced Options Toggle ---------- */
 
@@ -480,6 +523,15 @@ function updatePreview() {
     const nameSuffix = jobName ? ` (${jobName})` : "";
     const domainSuffix = stayOnDomain ? ", staying on this domain" : "";
 
+    if (listMode) {
+        const n = countListEntries();
+        scrapePreviewDot.className = n > 0 ? "scrape-preview-dot active" : "scrape-preview-dot";
+        scrapePreviewText.textContent = n > 0
+            ? `Will add ${n} website${n !== 1 ? "s" : ""} as one job${nameSuffix}. Review to check the list before saving.`
+            : "Paste one or more URLs above.";
+        return;
+    }
+
     if (!url && !selectedScope) {
         scrapePreviewDot.className = "scrape-preview-dot";
         scrapePreviewText.textContent = "Enter a URL and choose a scope to get started.";
@@ -517,7 +569,14 @@ function updatePreview() {
 }
 
 function updateSubmitBtn() {
+    if (listMode) {
+        const n = countListEntries();
+        scrapeBtn.textContent = n > 0 ? `Review ${n} website${n !== 1 ? "s" : ""}` : "Review websites";
+        scrapeBtn.disabled = n === 0;
+        return;
+    }
     const hasUrl = scrapeUrlInput.value.trim().length > 0;
+    scrapeBtn.textContent = "Discover pages";
     scrapeBtn.disabled = !(hasUrl && selectedScope);
 }
 
@@ -539,10 +598,9 @@ function resetScrapeForm() {
     scrapeDepthBtns.querySelectorAll(".scrape-depth-btn").forEach((b, i) => {
         b.classList.toggle("active", i === 0);
     });
-    scrapeBtn.textContent = "Discover pages";
-    scrapeBtn.disabled = true;
     scrapeSaveSchedule.value = "";
-    updatePreview();
+    scrapeListInput.value = "";
+    setListMode(false);
 }
 
 /* ---------- Phase 1: Discover Pages ---------- */
@@ -555,19 +613,23 @@ scrapeBtn.addEventListener("click", async () => {
     discoveredUrls = [];
 
     scrapeBtn.disabled = true;
-    scrapeBtn.innerHTML = '<span class="btn-spinner"></span> Searching&hellip;';
+    scrapeBtn.innerHTML = listMode
+        ? '<span class="btn-spinner"></span> Checking&hellip;'
+        : '<span class="btn-spinner"></span> Searching&hellip;';
 
     const mode = selectedScope === "prefix" ? "prefix" : "depth";
     const max_depth = selectedScope === "links" ? selectedDepth : (selectedScope === "single" ? 0 : 1);
     const maxPagesVal = parseInt(scrapeMaxPagesInput.value, 10);
 
-    const payload = {
-        base_url: baseUrl,
-        mode,
-        max_depth,
-        max_pages: maxPagesVal === 0 ? 10000 : maxPagesVal,
-        allow_offsite: !scrapeStayOnDomainCb.checked,
-    };
+    const payload = listMode
+        ? { mode: "list", urls: scrapeListInput.value }
+        : {
+            base_url: baseUrl,
+            mode,
+            max_depth,
+            max_pages: maxPagesVal === 0 ? 10000 : maxPagesVal,
+            allow_offsite: !scrapeStayOnDomainCb.checked,
+        };
 
     try {
         const res = await fetch(discoverUrl, {
@@ -583,27 +645,41 @@ scrapeBtn.addEventListener("click", async () => {
 
         const data = await res.json();
         discoveredUrls = data.urls || [];
-        const blockedUrls = data.blocked || [];
+        const invalidEntries = data.invalid || [];
 
-        if (discoveredUrls.length === 0 && blockedUrls.length === 0) {
+        if (discoveredUrls.length === 0 && invalidEntries.length === 0) {
             scrapeDiscoveryCount.textContent = "No pages found";
-            scrapeUrlList.innerHTML = '<div class="scrape-url-empty">No downloadable pages were found at this URL.</div>';
+            scrapeUrlList.innerHTML = listMode
+                ? '<div class="scrape-url-empty">No URLs were found in the list.</div>'
+                : '<div class="scrape-url-empty">No downloadable pages were found at this URL.</div>';
             scrapeProcessBtn.style.display = "none";
             scrapeDiscovery.classList.add("visible");
         } else {
-            renderDiscoveredUrls(blockedUrls);
+            renderDiscoveredUrls(invalidEntries);
             scrapeDiscovery.classList.add("visible");
         }
     } catch (err) {
         console.error("Scrape discovery error:", err);
         alert("Failed to find pages: " + err.message);
     } finally {
-        scrapeBtn.disabled = false;
-        scrapeBtn.textContent = "Discover pages";
+        updateSubmitBtn();
     }
 });
 
-function renderDiscoveredUrls(blockedUrls = []) {
+function appendUrlListSection(label, entries, iconSvg) {
+    const divider = document.createElement("div");
+    divider.className = "scrape-url-skipped-header";
+    divider.innerHTML = `${iconSvg} ${escHtml(label)}`;
+    scrapeUrlList.appendChild(divider);
+    entries.forEach((entry) => {
+        const item = document.createElement("div");
+        item.className = "scrape-url-item scrape-url-item--skipped";
+        item.innerHTML = `<span class="url-text" title="${escHtml(entry)}">${escHtml(entry)}</span>`;
+        scrapeUrlList.appendChild(item);
+    });
+}
+
+function renderDiscoveredUrls(invalidEntries = []) {
     scrapeUrlList.innerHTML = "";
     scrapeSelectAllCb.checked = true;
     scrapeProcessBtn.style.display = discoveredUrls.length > 0 ? "" : "none";
@@ -618,20 +694,12 @@ function renderDiscoveredUrls(blockedUrls = []) {
         scrapeUrlList.appendChild(item);
     });
 
-    if (blockedUrls.length > 0) {
-        const divider = document.createElement("div");
-        divider.className = "scrape-url-blocked-header";
-        divider.innerHTML = `
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
-            ${blockedUrls.length} page${blockedUrls.length !== 1 ? "s" : ""} blocked by website host
-        `;
-        scrapeUrlList.appendChild(divider);
-        blockedUrls.forEach((url) => {
-            const item = document.createElement("div");
-            item.className = "scrape-url-item scrape-url-item--blocked";
-            item.innerHTML = `<span class="url-text" title="${escHtml(url)}">${escHtml(url)}</span>`;
-            scrapeUrlList.appendChild(item);
-        });
+    if (invalidEntries.length > 0) {
+        appendUrlListSection(
+            `${invalidEntries.length} entr${invalidEntries.length !== 1 ? "ies" : "y"} not recognized as a URL (skipped)`,
+            invalidEntries,
+            '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
+        );
     }
 
     updateDiscoveryCount();
@@ -645,7 +713,9 @@ function updateDiscoveryCount() {
     const cbs = scrapeUrlList.querySelectorAll(".scrape-url-cb");
     const checkedCount = Array.from(cbs).filter((cb) => cb.checked).length;
     const total = discoveredUrls.length;
-    scrapeDiscoveryCount.textContent = `Found ${total} page${total !== 1 ? "s" : ""}`;
+    scrapeDiscoveryCount.textContent = listMode
+        ? `${total} website${total !== 1 ? "s" : ""} ready`
+        : `Found ${total} page${total !== 1 ? "s" : ""}`;
     scrapeProcessBtn.textContent = `Save job & scrape now (${checkedCount})`;
     scrapeProcessBtn.disabled = checkedCount === 0;
 
@@ -677,7 +747,8 @@ scrapeCancelBtn.addEventListener("click", () => {
 
 scrapeProcessBtn.addEventListener("click", async () => {
     const cbs = scrapeUrlList.querySelectorAll(".scrape-url-cb:checked");
-    // We only use selectedUrls for the initial count display; the backend re-discovers
+    // Crawl modes re-discover on the backend, so only the count matters there;
+    // list mode saves exactly the checked URLs.
     const selectedUrlCount = cbs.length;
     if (selectedUrlCount === 0) return;
 
@@ -685,6 +756,23 @@ scrapeProcessBtn.addEventListener("click", async () => {
     const schedule = scrapeSaveSchedule.value || null;
     const mode = selectedScope === "prefix" ? "prefix" : (selectedScope === "single" ? "single" : "depth");
     const maxPagesVal = parseInt(scrapeMaxPagesInput.value, 10);
+
+    const jobPayload = listMode
+        ? {
+            name: jobName,
+            mode: "list",
+            urls: Array.from(cbs).map((cb) => discoveredUrls[parseInt(cb.dataset.index, 10)]),
+            schedule_interval: schedule,
+        }
+        : {
+            name: jobName,
+            base_url: scrapeUrlInput.value.trim(),
+            mode: mode,
+            max_depth: selectedScope === "links" ? selectedDepth : (selectedScope === "single" ? 0 : 1),
+            max_pages: maxPagesVal === 0 ? 10000 : maxPagesVal,
+            allow_offsite: !scrapeStayOnDomainCb.checked,
+            schedule_interval: schedule,
+        };
 
     isScraping = true;
     scrapeProcessBtn.disabled = true;
@@ -697,15 +785,7 @@ scrapeProcessBtn.addEventListener("click", async () => {
         const res = await fetch(jobsUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                name: jobName,
-                base_url: scrapeUrlInput.value.trim(),
-                mode: mode,
-                max_depth: selectedScope === "links" ? selectedDepth : (selectedScope === "single" ? 0 : 1),
-                max_pages: maxPagesVal === 0 ? 10000 : maxPagesVal,
-                allow_offsite: !scrapeStayOnDomainCb.checked,
-                schedule_interval: schedule,
-            }),
+            body: JSON.stringify(jobPayload),
         });
         if (!res.ok) {
             const err = await res.json().catch(() => ({}));
@@ -717,7 +797,7 @@ scrapeProcessBtn.addEventListener("click", async () => {
         isScraping = false;
         scrapeProcessBtn.disabled = false;
         scrapeProcessBtn.textContent = "Save job & scrape now";
-        scrapeBtn.disabled = false;
+        updateSubmitBtn();
         return;
     }
 
@@ -756,6 +836,15 @@ function formatJobDate(isoStr) {
     });
 }
 
+function jobUrlHtml(job) {
+    if (job.mode === "list" && job.urls && job.urls.length) {
+        const n = job.urls.length;
+        const more = n > 1 ? ` + ${n - 1} more` : "";
+        return `<div class="scrape-job-url" title="${escHtml(job.urls.join("\n"))}">${n} website${n !== 1 ? "s" : ""} &middot; ${escHtml(job.urls[0])}${more}</div>`;
+    }
+    return `<div class="scrape-job-url" title="${escHtml(job.base_url)}">${escHtml(job.base_url)}</div>`;
+}
+
 function insertJobCard(job, workspaceId, startRunning = false) {
     // Remove the empty-state message if present
     const empty = document.getElementById("scrapeJobsEmpty");
@@ -790,7 +879,7 @@ function insertJobCard(job, workspaceId, startRunning = false) {
                 </div>
                 <div class="scrape-job-info">
                     <div class="scrape-job-name">${escHtml(job.name)}</div>
-                    <div class="scrape-job-url" title="${escHtml(job.base_url)}">${escHtml(job.base_url)}</div>
+                    ${jobUrlHtml(job)}
                 </div>
             </div>
             <div class="scrape-job-card-right">
@@ -1098,6 +1187,45 @@ function renderJobPages(listEl, pages, card) {
 
 /* ---------- Run a job via SSE ---------- */
 
+function failureReason(message = "") {
+    if (/HTTP (401|403|429)\b/.test(message)) return "Site blocked automated access";
+    if (/HTTP 404\b/.test(message)) return "Page not found";
+    if (/no usable content|empty content|Could not convert/i.test(message)) return "No readable content found";
+    if (/timed? ?out/i.test(message)) return "Site took too long to respond";
+    return "Could not be fetched";
+}
+
+function renderFailureNote(card, failures) {
+    card.querySelector(".scrape-job-failures")?.remove();
+    if (!failures.length) return;
+
+    const n = failures.length;
+    const note = document.createElement("div");
+    note.className = "scrape-job-failures";
+    note.setAttribute("role", "status");
+    note.innerHTML = `
+        <div class="scrape-job-failures-header">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            <span class="scrape-job-failures-title">${n} page${n !== 1 ? "s" : ""} couldn't be added automatically</span>
+            <button type="button" class="scrape-job-failures-dismiss" aria-label="Dismiss">&times;</button>
+        </div>
+        <p class="scrape-job-failures-help">
+            Some websites block automated tools. To add ${n !== 1 ? "these pages" : "this page"}:
+            open the link, right-click the page and choose <strong>Save As&hellip;</strong> (save as HTML),
+            then upload the saved file under <strong>Upload Documents</strong> above.
+        </p>
+        <ul class="scrape-job-failures-list">
+            ${failures.map((f) => `
+                <li>
+                    <a href="${escHtml(f.url)}" target="_blank" rel="noopener noreferrer" title="${escHtml(f.message || "")}">${escHtml(f.url)}</a>
+                    <span class="scrape-job-failures-reason">${escHtml(failureReason(f.message))}</span>
+                </li>`).join("")}
+        </ul>
+    `;
+    note.querySelector(".scrape-job-failures-dismiss").addEventListener("click", () => note.remove());
+    card.querySelector(".scrape-job-progress").after(note);
+}
+
 async function runJobById(jobId, workspaceId) {
     const card = scrapeJobsList.querySelector(`[data-job-id="${CSS.escape(jobId)}"]`);
     if (!card) return;
@@ -1113,6 +1241,8 @@ async function runJobById(jobId, workspaceId) {
     progressArea.classList.add("visible");
     progressFill.style.width = "0%";
     progressStatus.textContent = "Discovering pages\u2026";
+    card.querySelector(".scrape-job-failures")?.remove();
+    const failures = [];
 
     const runUrl = `/${workspaceId}/scrape/jobs/${jobId}/run`;
 
@@ -1146,6 +1276,7 @@ async function runJobById(jobId, workspaceId) {
                 if (payload === "[DONE]") {
                     progressFill.style.width = "100%";
                     progressStatus.textContent = "Complete";
+                    renderFailureNote(card, failures);
                     setTimeout(() => {
                         progressArea.classList.remove("visible");
                         progressFill.style.width = "0%";
@@ -1215,8 +1346,9 @@ async function runJobById(jobId, workspaceId) {
                                       event.status === "removed" ? "Removing" : "Checking";
                         progressStatus.textContent = `${label}: ${event.url}`;
                     } else if (event.status === "error" && event.url) {
-                        // Per-URL error — continue
+                        // Per-URL error — continue, and offer the manual-upload fallback at the end
                         processedUrls++;
+                        failures.push({ url: event.url, message: event.message });
                     } else if (event.status === "error") {
                         progressStatus.textContent = "Error: " + (event.message || "Unknown error");
                     }

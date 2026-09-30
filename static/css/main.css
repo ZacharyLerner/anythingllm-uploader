@@ -562,7 +562,7 @@ body {
     display: grid;
     grid-template-rows: 0fr;
     opacity: 0;
-    transition: grid-template-rows 0.3s ease, opacity 0.25s ease;
+    transition: grid-template-rows 0.3s ease, opacity 0.25s ease, margin-top 0.3s ease;
 }
 
 .scrape-form-extras > .scrape-form-extras-inner {
@@ -637,6 +637,87 @@ body {
 }
 
 .scrape-field input::placeholder { color: var(--gray-mid); }
+
+/* ========== Website List ========== */
+.scrape-list-section { margin: 8px 0 0; }
+
+/* Space between the list button and the options only once the options are shown */
+.scrape-form-extras.visible { margin-top: 14px; }
+
+.scrape-list-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 18px;
+    background: #fff;
+    border: 1.5px solid var(--uri-gold);
+    border-radius: 4px;
+    box-shadow: 0 1px 2px rgba(0,33,71,0.08);
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--uri-blue);
+    cursor: pointer;
+    letter-spacing: 0.2px;
+    transition: border-color 0.12s, background-color 0.12s, box-shadow 0.12s;
+}
+
+.scrape-list-toggle svg { color: var(--uri-gold-dark); flex-shrink: 0; width: 16px; height: 16px; }
+.scrape-list-toggle:hover { border-color: var(--uri-gold); background-color: var(--uri-gold-pale); }
+.scrape-list-toggle:focus-visible { outline: none; box-shadow: 0 0 0 2px rgba(0,33,71,0.15); }
+
+.scrape-list-toggle[aria-expanded="true"] {
+    border-color: var(--uri-gold);
+    background-color: var(--uri-gold-pale);
+    box-shadow: 0 0 0 1px var(--uri-gold);
+    color: #7a5000;
+}
+
+.scrape-list-panel { display: none; margin-top: 10px; }
+.scrape-list-panel.open { display: block; }
+
+.scrape-field textarea {
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--uri-blue);
+    background: #fff;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    resize: vertical;
+    min-height: 110px;
+    transition: border-color 0.15s;
+}
+
+.scrape-field textarea:focus {
+    outline: none;
+    border-color: var(--uri-blue);
+    box-shadow: 0 0 0 2px rgba(0,33,71,0.1);
+}
+
+.scrape-field textarea::placeholder { color: var(--gray-mid); }
+
+.scrape-field input:disabled { background: var(--gray-light); color: var(--gray-mid); cursor: not-allowed; }
+
+.scrape-field-error {
+    display: none;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--error);
+    margin: 5px 0 0;
+}
+
+.scrape-field.has-error label { color: var(--error); }
+.scrape-field.has-error input { border-color: var(--error); background-color: #fef6f6; }
+.scrape-field.has-error input:focus { border-color: var(--error); box-shadow: 0 0 0 2px rgba(185,28,28,0.15); }
+.scrape-field.has-error .scrape-field-error { display: block; }
+
+/* In list mode only the preview bar and submit button apply */
+.scrape-form-extras.list-mode .scrape-scope-section,
+.scrape-form-extras.list-mode .scrape-depth-panel,
+.scrape-form-extras.list-mode .scrape-advanced-toggle,
+.scrape-form-extras.list-mode .scrape-advanced { display: none; }
 
 /* ========== Scope Selector ========== */
 .scrape-scope-section { margin-bottom: 10px; }
@@ -967,7 +1048,7 @@ body {
 
 .scrape-url-empty { padding: 20px; text-align: center; color: var(--gray-mid); font-size: 13px; }
 
-.scrape-url-blocked-header {
+.scrape-url-skipped-header {
     display: flex;
     align-items: center;
     gap: 6px;
@@ -982,10 +1063,10 @@ body {
     letter-spacing: 0.5px;
 }
 
-.scrape-url-blocked-header svg { flex-shrink: 0; color: #d97706; }
+.scrape-url-skipped-header svg { flex-shrink: 0; color: #d97706; }
 
-.scrape-url-item--blocked { opacity: 0.6; cursor: default; background-color: #fffbf5; }
-.scrape-url-item--blocked .url-text { color: var(--gray-mid); text-decoration: line-through; text-decoration-color: #d97706; }
+.scrape-url-item--skipped { opacity: 0.6; cursor: default; background-color: #fffbf5; }
+.scrape-url-item--skipped .url-text { color: var(--gray-mid); text-decoration: line-through; text-decoration-color: #d97706; }
 
 /* ========== In-progress and error scrape cards ========== */
 .scraped-files-section .section-body { max-height: 55vh; }
@@ -1642,3 +1723,76 @@ body {
 }
 
 .btn-job-page-delete:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ========== Job run: pages that need a manual upload ========== */
+.scrape-job-failures {
+    margin: 10px 0 4px;
+    border: 1px solid #fde8cc;
+    border-left: 3px solid #d97706;
+    border-radius: 4px;
+    background-color: #fff8f0;
+    padding: 10px 12px;
+}
+
+.scrape-job-failures-header {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    color: #92400e;
+}
+
+.scrape-job-failures-header svg { color: #d97706; flex-shrink: 0; }
+.scrape-job-failures-title { font-size: 12px; font-weight: 700; flex: 1; }
+
+.scrape-job-failures-dismiss {
+    background: none;
+    border: none;
+    font-size: 18px;
+    line-height: 1;
+    color: #92400e;
+    cursor: pointer;
+    padding: 0 2px;
+    opacity: 0.7;
+}
+
+.scrape-job-failures-dismiss:hover { opacity: 1; }
+
+.scrape-job-failures-help {
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--uri-blue);
+    margin: 6px 0 8px;
+}
+
+.scrape-job-failures-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-height: 180px;
+    overflow-y: auto;
+    background: #fff;
+    border: 1px solid #fde8cc;
+    border-radius: 4px;
+}
+
+.scrape-job-failures-list li {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 6px 10px;
+    font-size: 12px;
+    border-bottom: 1px solid #fdf0e0;
+}
+
+.scrape-job-failures-list li:last-child { border-bottom: none; }
+
+.scrape-job-failures-list a {
+    color: var(--uri-blue-light);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+}
+
+.scrape-job-failures-reason { flex-shrink: 0; font-size: 11px; color: #92400e; }

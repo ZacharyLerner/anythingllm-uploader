@@ -48,7 +48,8 @@ class WorkspaceResponse(WorkspaceBase):
 class ScrapeJobCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     base_url: str
-    mode: str = "depth"          # depth | prefix | single
+    mode: str = "depth"          # depth | prefix | single | list
+    urls: Optional[list[str]] = None  # required when mode == "list"
     max_depth: int = 2
     max_pages: int = 100
     allow_offsite: bool = False
@@ -63,6 +64,7 @@ class ScrapeJobUpdate(BaseModel):
     max_depth: Optional[int] = None
     max_pages: Optional[int] = None
     allow_offsite: Optional[bool] = None
+    urls: Optional[list[str]] = None
 
 
 class ScrapeJobResponse(BaseModel):
@@ -72,6 +74,7 @@ class ScrapeJobResponse(BaseModel):
     name: str
     base_url: str
     mode: str
+    urls: Optional[list[str]] = None
     max_depth: int
     max_pages: int
     allow_offsite: bool

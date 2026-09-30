@@ -28,7 +28,8 @@ class ScrapeJob(Base):
     workspace_id = Column(String, ForeignKey("workspaces.id"), nullable=False)
     name = Column(String(200), nullable=False)
     base_url = Column(String, nullable=False)
-    mode = Column(String, default="depth")          # depth | prefix | single
+    mode = Column(String, default="depth")          # depth | prefix | single | list
+    urls = Column(JSON, nullable=True)              # explicit URL list for mode="list"
     max_depth = Column(Integer, default=2)
     max_pages = Column(Integer, default=100)
     allow_offsite = Column(Boolean, default=False)

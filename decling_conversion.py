@@ -1,6 +1,6 @@
 import re
-import requests
 from bs4 import BeautifulSoup
+from curl_cffi import requests as browser_requests
 
 from docling.document_converter import DocumentConverter
 from docling.datamodel.base_models import InputFormat
@@ -11,34 +11,77 @@ import time
 
 converter = DocumentConverter()
 
-_HEADERS = {"User-Agent": "KnowledgeBaseBot/1.0 (educational knowledge base indexer; respectful crawler)"}
-_NOISE_TAGS = ["header", "footer", "nav", "script", "style", "noscript", "aside", "form"]
+# Fetch pages with a real browser's TLS/HTTP fingerprint and headers. Many sites
+# (Cloudflare, Akamai, Varnish) reject Python's default client outright.
+BROWSER_IMPERSONATE = "chrome"
+_NOISE_TAGS = ["header", "footer", "nav", "script", "style", "noscript", "aside"]
+
+# Real breadcrumb classes ("breadcrumb", "breadcrumbs", "usda-breadcrumb-list"), but not
+# layout modifiers like "with-breadcrumb" that some sites put on the main content area.
+_BREADCRUMB_CLASS_RE = re.compile(r"^(?!(?:with|has)-).*breadcrumb", re.I)
+_LOADER_RE = re.compile(r"loader|spinner", re.I)
+
+
+def _is_pdf(response) -> bool:
+    content_type = response.headers.get("content-type", "").lower()
+    return "application/pdf" in content_type or response.content[:5] == b"%PDF-"
+
+
+def _word_count(el) -> int:
+    return len(el.get_text(" ", strip=True).split())
+
+
+def _wraps_page_content(el, page_words: int) -> bool:
+    """True if removing `el` would take the page's main content with it."""
+    if el.name in ("html", "body", "main", "article"):
+        return True
+    if el.find(["main", "article"]):
+        return True
+    return page_words > 0 and _word_count(el) > page_words * 0.5
 
 
 def scrape_website_md(url):
     try:
-        response = requests.get(url, headers=_HEADERS, timeout=15)
-        response.raise_for_status()
-    except requests.exceptions.RequestException as e:
+        response = browser_requests.get(url, impersonate=BROWSER_IMPERSONATE, timeout=15)
+    except Exception as e:
         raise ValueError(f"Request failed: {e}") from e
+    if response.status_code >= 400:
+        raise ValueError(f"Request failed: HTTP {response.status_code} from {url}")
 
-    response.encoding = response.apparent_encoding
-    soup = BeautifulSoup(response.text, "html.parser")
+    if _is_pdf(response):
+        try:
+            md = convert_file(response.content, "page.pdf")
+        except Exception as e:
+            raise ValueError(f"Could not convert PDF: {e}") from e
+        if not md or not md.strip():
+            raise ValueError("PDF converted to empty content")
+        return _clean_markdown(md)
+
+    # Pass bytes so BeautifulSoup picks the charset from the page itself
+    soup = BeautifulSoup(response.content, "html.parser")
 
     # If the page is essentially empty (JS redirect, login wall, etc.)
     # there is nothing to convert — bail early with a clear message.
     if len(soup.get_text(strip=True)) < 50:
         raise ValueError("Page returned no usable content (may require login or redirect)")
 
-    # Strip noise tags (header/footer/nav + scripts/styles/forms)
+    # Strip noise tags (header/footer/nav + scripts/styles)
     for tag in soup.find_all(_NOISE_TAGS):
         tag.extract()
 
-    # Strip loading spinners and breadcrumbs by id/class
-    for el in soup.find_all(id=re.compile(r"loader|spinner", re.I)):
-        el.extract()
-    for el in soup.find_all(class_=re.compile(r"loader|spinner|breadcrumb", re.I)):
-        el.extract()
+    # Forms, spinners and breadcrumbs are usually clutter, but some sites wrap the whole
+    # page in them (ASP.NET's page-level <form>, class="with-breadcrumb" on <main>),
+    # so never remove one that holds the page's main content.
+    page_words = _word_count(soup)
+    candidates = (
+        soup.find_all("form")
+        + soup.find_all(id=_LOADER_RE)
+        + soup.find_all(class_=_LOADER_RE)
+        + soup.find_all(class_=_BREADCRUMB_CLASS_RE)
+    )
+    for el in candidates:
+        if el.parent is not None and not _wraps_page_content(el, page_words):
+            el.extract()
 
     try:
         buf = BytesIO(str(soup).encode("utf-8"))

@@ -3,6 +3,7 @@ import hashlib
 import io
 import json
 import re
+import subprocess
 import uuid
 from datetime import timedelta
 from pathlib import Path
@@ -24,7 +25,7 @@ from anythingllm import (
     LLM_update_workspace_settings,
     LLM_delete_workspace,
 )
-from config import API_URL, HEADERS
+from config import API_URL, HEADERS, APP_API_KEY
 import requests as _requests
 from config import TEXT_EXTENSIONS, DEBUG_UPLOAD_DIR, MAX_UPLOAD_BYTES
 from database import Base, engine, get_db
@@ -60,6 +61,9 @@ with engine.connect() as conn:
         conn.execute(text("ALTER TABLE files ADD COLUMN content_hash VARCHAR"))
     if "last_checked_at" not in file_cols:
         conn.execute(text("ALTER TABLE files ADD COLUMN last_checked_at DATETIME"))
+    job_cols = [c["name"] for c in sa_inspect(engine).get_columns("scrape_jobs")]
+    if "urls" not in job_cols:
+        conn.execute(text("ALTER TABLE scrape_jobs ADD COLUMN urls JSON"))
     conn.commit()
 
 # App Setup
@@ -94,6 +98,30 @@ def _compute_next_run(interval: str | None, from_time=None):
     return (from_time + delta) if delta else None
 
 
+async def _discover_job_urls(job):
+    """Return the list of URLs a job should scrape, according to its mode."""
+    if job.mode == "single":
+        return [job.base_url]
+    if job.mode == "list":
+        return list(job.urls or [])
+    if job.mode == "prefix":
+        parsed_path = urlparse(job.base_url).path or "/"
+        if not parsed_path.endswith("/"):
+            parsed_path = parsed_path.rsplit("/", 1)[0] + "/"
+        return await get_links_by_prefix(
+            job.base_url,
+            prefixes=[parsed_path],
+            allow_offsite=job.allow_offsite,
+            max_pages=job.max_pages,
+        )
+    return await get_links_by_depth(
+        job.base_url,
+        max_depth=job.max_depth,
+        allow_offsite=job.allow_offsite,
+        max_pages=job.max_pages,
+    )
+
+
 async def _run_scrape_job_background(job_id: str):
     """Background task: run a scrape job by ID, updating DB directly."""
     from database import SessionLocal
@@ -110,25 +138,7 @@ async def _run_scrape_job_background(job_id: str):
 
         try:
             # Re-discover URLs
-            if job.mode == "single":
-                urls, blocked = [job.base_url], []
-            elif job.mode == "prefix":
-                parsed_path = urlparse(job.base_url).path or "/"
-                if not parsed_path.endswith("/"):
-                    parsed_path = parsed_path.rsplit("/", 1)[0] + "/"
-                urls, blocked = await get_links_by_prefix(
-                    job.base_url,
-                    prefixes=[parsed_path],
-                    allow_offsite=job.allow_offsite,
-                    max_pages=job.max_pages,
-                )
-            else:
-                urls, blocked = await get_links_by_depth(
-                    job.base_url,
-                    max_depth=job.max_depth,
-                    allow_offsite=job.allow_offsite,
-                    max_pages=job.max_pages,
-                )
+            urls = await _discover_job_urls(job)
 
             url_set = set(urls)
 
@@ -145,6 +155,7 @@ async def _run_scrape_job_background(job_id: str):
                     await asyncio.to_thread(
                         LLM_remove_document, job.workspace_id, file_rec.id
                     )
+                    _delete_debug_file(job.workspace_id, file_rec.filename)
                     db.delete(file_rec)
             db.commit()
 
@@ -208,7 +219,7 @@ async def _process_job_url(url, job, existing_files, queue):
             llm_file.name = filename
 
             if DEBUG_UPLOAD_DIR:
-                debug_path = Path(DEBUG_UPLOAD_DIR) / filename
+                debug_path = Path(DEBUG_UPLOAD_DIR) / job.workspace_id / filename
                 debug_path.parent.mkdir(parents=True, exist_ok=True)
                 await asyncio.to_thread(debug_path.write_text, llm_file.getvalue())
 
@@ -294,6 +305,126 @@ def _sanitize_url_to_filename(url: str) -> str:
     return f"{domain}_{slug}" if slug else domain
 
 
+MAX_LIST_URLS = 1000
+
+_SCHEME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.\-]*://")
+_LIST_MARKER_RE = re.compile(r"^(?:\d+[.)]|[-*\u2022])$")
+_WRAPPING_CHARS = "<>\"'`[]()"
+_TRAILING_PUNCT = ".,;:!?"
+
+
+def _normalize_list_url(token: str) -> str | None:
+    """Clean one pasted token into an http(s) URL, or return None if it isn't one."""
+    token = token.strip().lstrip(_WRAPPING_CHARS)
+    token = token.rstrip(_TRAILING_PUNCT).rstrip(_WRAPPING_CHARS.replace(")", "")).rstrip(_TRAILING_PUNCT)
+    # A trailing ")" with no matching "(" is sentence punctuation, not part of the URL
+    while token.endswith(")") and token.count("(") < token.count(")"):
+        token = token[:-1].rstrip(_TRAILING_PUNCT)
+    if not token:
+        return None
+    if not _SCHEME_RE.match(token):
+        token = "https://" + token
+
+    parsed = urlparse(token)
+    host = parsed.hostname or ""
+    if parsed.scheme.lower() not in ("http", "https"):
+        return None
+    if not host or ("." not in host and host != "localhost"):
+        return None
+    try:
+        parsed.port  # raises ValueError on a malformed port
+    except ValueError:
+        return None
+
+    return parsed._replace(
+        scheme=parsed.scheme.lower(),
+        netloc=parsed.netloc.lower(),
+        path=parsed.path or "/",
+        fragment="",
+    ).geturl()
+
+
+def _parse_url_list(raw) -> tuple[list[str], list[str], int]:
+    """
+    Parse user-supplied URLs (a pasted block of text or a list of strings).
+
+    URLs may be separated by newlines, spaces, tabs, or commas. List markers
+    ("1.", "-", "*") and wrapping quotes/brackets are ignored, a missing scheme
+    defaults to https://, and fragments are dropped. Plain words next to a URL
+    are ignored; a line with no URL, or a URL-like token that can't be parsed,
+    is reported as invalid.
+
+    Returns (valid_urls, invalid_entries, duplicate_count); valid_urls keeps
+    first-seen order with duplicates removed.
+    """
+    if raw is None:
+        return [], [], 0
+    text_block = "\n".join(str(x) for x in raw) if isinstance(raw, list) else str(raw)
+
+    valid, invalid, seen = [], [], set()
+    duplicates = 0
+    for line in text_block.splitlines():
+        line_urls, line_bad, line_has_content = [], [], False
+        for tok in re.split(r"\s+", line):
+            # "a.com,b.com" or "https://a.com,https://b.com" pasted without spaces
+            for part in re.split(r",(?=\S)(?=[^,]*\.)", tok) if "," in tok else [tok]:
+                part = part.strip().strip(",;")
+                if not part or _LIST_MARKER_RE.match(part):
+                    continue
+                line_has_content = True
+                url = _normalize_list_url(part)
+                if url is not None:
+                    line_urls.append(url)
+                elif "." in part or "/" in part:
+                    line_bad.append(part)  # looks like an attempted URL — report it
+
+        if line_has_content and not line_urls and not line_bad:
+            invalid.append(line.strip())  # a line of plain text with no URL in it
+        invalid.extend(line_bad)
+        for url in line_urls:
+            if url in seen:
+                duplicates += 1
+            else:
+                seen.add(url)
+                valid.append(url)
+    return valid, invalid, duplicates
+
+
+def _job_to_dict(job, page_count: int = 0) -> dict:
+    return {
+        "id": job.id,
+        "workspace_id": job.workspace_id,
+        "name": job.name,
+        "base_url": job.base_url,
+        "mode": job.mode,
+        "urls": job.urls,
+        "max_depth": job.max_depth,
+        "max_pages": job.max_pages,
+        "allow_offsite": job.allow_offsite,
+        "schedule_interval": job.schedule_interval,
+        "last_scraped_at": job.last_scraped_at.isoformat() if job.last_scraped_at else None,
+        "next_scrape_at": job.next_scrape_at.isoformat() if job.next_scrape_at else None,
+        "is_running": bool(job.is_running),
+        "created_at": job.created_at.isoformat() if job.created_at else None,
+        "page_count": page_count,
+    }
+
+
+def _require_url_list(raw) -> list[str]:
+    """Parse a URL list for saving on a job; 400 unless every entry is a usable URL."""
+    urls, invalid, _ = _parse_url_list(raw)
+    if invalid:
+        shown = ", ".join(invalid[:5]) + (" …" if len(invalid) > 5 else "")
+        raise HTTPException(status_code=400, detail=f"Not valid URLs: {shown}")
+    if not urls:
+        raise HTTPException(status_code=400, detail="At least one URL is required")
+    if len(urls) > MAX_LIST_URLS:
+        raise HTTPException(
+            status_code=400, detail=f"Too many URLs ({len(urls)}); the limit is {MAX_LIST_URLS}"
+        )
+    return urls
+
+
 # ---------------------------------------------------------------------------
 # Web UI Routes
 # ---------------------------------------------------------------------------
@@ -371,7 +502,7 @@ async def processes_file(content, fname, workspace_id, queue):
                 LLM_File.name = fname
 
             if DEBUG_UPLOAD_DIR:
-                debug_path = Path(DEBUG_UPLOAD_DIR) / LLM_File.name
+                debug_path = Path(DEBUG_UPLOAD_DIR) / workspace_id / LLM_File.name
                 debug_path.parent.mkdir(parents=True, exist_ok=True)
                 await asyncio.to_thread(debug_path.write_text, LLM_File.getvalue())
 
@@ -479,6 +610,32 @@ async def create_upload_files(
 # Delete endpoints
 # ---------------------------------------------------------------------------
 
+def _debug_filename(original_filename: str) -> str:
+    """Return the filename as it was written to debug_uploads.
+
+    Text-extension files are stored under their original name; all other
+    files are converted to Markdown and stored with a .md suffix.
+    """
+    if Path(original_filename).suffix.lower() in TEXT_EXTENSIONS:
+        return original_filename
+    return Path(original_filename).with_suffix(".md").name
+
+
+def _delete_debug_file(workspace_id: str, filename: str) -> None:
+    """Remove the cached debug copy from debug_uploads if it exists.
+
+    `filename` should be the *original* filename as stored in FileModel.filename;
+    this function resolves the correct on-disk name automatically.
+    """
+    if not DEBUG_UPLOAD_DIR:
+        return
+    debug_path = Path(DEBUG_UPLOAD_DIR) / workspace_id / _debug_filename(filename)
+    try:
+        debug_path.unlink(missing_ok=True)
+    except Exception as e:
+        print(f"[debug] failed to remove debug file {debug_path}: {e}")
+
+
 async def _delete_file(file_id, workspace_id):
     async with DELETE_SEM:
         success = await asyncio.to_thread(LLM_remove_document, workspace_id, file_id)
@@ -495,6 +652,7 @@ async def delete_uploaded_file(file_id: str, db: Session = Depends(get_db)):
     if not success:
         raise HTTPException(status_code=500, detail="Failed to delete from LLM")
 
+    _delete_debug_file(file_to_delete.workspace_id, file_to_delete.filename)
     db.delete(file_to_delete)
     db.commit()
     return {"deleted": file_id}
@@ -525,7 +683,9 @@ async def delete_bulk_files(request: Request, db: Session = Depends(get_db)):
             continue
         file_id, success = r
         if success:
-            db.delete(files[file_id])
+            f_rec = files[file_id]
+            _delete_debug_file(f_rec.workspace_id, f_rec.filename)
+            db.delete(f_rec)
             deleted.append(file_id)
         else:
             print(f"[bulk-delete] LLM_remove_document returned False for {file_id!r}")
@@ -581,8 +741,23 @@ async def scrape_discover(workspace_id: str, request: Request, db: Session = Dep
         raise HTTPException(status_code=404, detail="Workspace not found")
 
     body = await request.json()
-    base_url = body.get("base_url", "").strip()
     mode = body.get("mode", "depth")
+
+    if mode == "list":
+        urls, invalid, duplicates = _parse_url_list(body.get("urls"))
+        if len(urls) > MAX_LIST_URLS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Too many URLs ({len(urls)}); the limit is {MAX_LIST_URLS}",
+            )
+        return {
+            "urls": urls,
+            "count": len(urls),
+            "invalid": invalid,
+            "duplicates": duplicates,
+        }
+
+    base_url = body.get("base_url", "").strip()
     max_depth = int(body.get("max_depth", 2))
     max_pages = int(body.get("max_pages", 100))
     allow_offsite = bool(body.get("allow_offsite", False))
@@ -595,14 +770,14 @@ async def scrape_discover(workspace_id: str, request: Request, db: Session = Dep
             parsed_path = urlparse(base_url).path or "/"
             if not parsed_path.endswith("/"):
                 parsed_path = parsed_path.rsplit("/", 1)[0] + "/"
-            urls, blocked = await get_links_by_prefix(
+            urls = await get_links_by_prefix(
                 base_url,
                 prefixes=[parsed_path],
                 allow_offsite=allow_offsite,
                 max_pages=max_pages,
             )
         else:
-            urls, blocked = await get_links_by_depth(
+            urls = await get_links_by_depth(
                 base_url,
                 max_depth=max_depth,
                 allow_offsite=allow_offsite,
@@ -611,7 +786,7 @@ async def scrape_discover(workspace_id: str, request: Request, db: Session = Dep
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Crawl failed: {str(e)}")
 
-    return {"urls": urls, "count": len(urls), "blocked": blocked}
+    return {"urls": urls, "count": len(urls)}
 
 
 # ---------------------------------------------------------------------------
@@ -631,27 +806,12 @@ async def list_scrape_jobs(workspace_id: str, db: Session = Depends(get_db)):
         .all()
     )
 
-    result = []
-    for job in jobs:
-        page_count = db.query(FileModel).filter(FileModel.scrape_job_id == job.id).count()
-        result.append({
-            "id": job.id,
-            "workspace_id": job.workspace_id,
-            "name": job.name,
-            "base_url": job.base_url,
-            "mode": job.mode,
-            "max_depth": job.max_depth,
-            "max_pages": job.max_pages,
-            "allow_offsite": job.allow_offsite,
-            "schedule_interval": job.schedule_interval,
-            "last_scraped_at": job.last_scraped_at.isoformat() if job.last_scraped_at else None,
-            "next_scrape_at": job.next_scrape_at.isoformat() if job.next_scrape_at else None,
-            "is_running": job.is_running,
-            "created_at": job.created_at.isoformat() if job.created_at else None,
-            "page_count": page_count,
-        })
-
-    return result
+    return [
+        _job_to_dict(
+            job, db.query(FileModel).filter(FileModel.scrape_job_id == job.id).count()
+        )
+        for job in jobs
+    ]
 
 
 @app.get("/{workspace_id}/scrape/jobs/{job_id}/pages", include_in_schema=False)
@@ -690,17 +850,25 @@ async def create_scrape_job(workspace_id: str, request: Request, db: Session = D
         raise HTTPException(status_code=404, detail="Workspace not found")
 
     body = await request.json()
+    mode = body.get("mode", "depth")
     job = ScrapeJob(
         id=str(uuid.uuid4()),
         workspace_id=workspace_id,
         name=body.get("name", "Untitled Job"),
         base_url=body.get("base_url", ""),
-        mode=body.get("mode", "depth"),
+        mode=mode,
         max_depth=int(body.get("max_depth", 2)),
         max_pages=int(body.get("max_pages", 100)),
         allow_offsite=bool(body.get("allow_offsite", False)),
         schedule_interval=body.get("schedule_interval") or None,
     )
+
+    if mode == "list":
+        job.urls = _require_url_list(body.get("urls"))
+        job.base_url = job.urls[0]
+        job.max_depth = 0
+        job.max_pages = len(job.urls)
+        job.allow_offsite = True
 
     if job.schedule_interval:
         from datetime import datetime
@@ -710,22 +878,7 @@ async def create_scrape_job(workspace_id: str, request: Request, db: Session = D
     db.commit()
     db.refresh(job)
 
-    return {
-        "id": job.id,
-        "workspace_id": job.workspace_id,
-        "name": job.name,
-        "base_url": job.base_url,
-        "mode": job.mode,
-        "max_depth": job.max_depth,
-        "max_pages": job.max_pages,
-        "allow_offsite": job.allow_offsite,
-        "schedule_interval": job.schedule_interval,
-        "last_scraped_at": None,
-        "next_scrape_at": job.next_scrape_at.isoformat() if job.next_scrape_at else None,
-        "is_running": False,
-        "created_at": job.created_at.isoformat() if job.created_at else None,
-        "page_count": 0,
-    }
+    return _job_to_dict(job)
 
 
 @app.patch("/{workspace_id}/scrape/jobs/{job_id}", include_in_schema=False)
@@ -752,6 +905,10 @@ async def update_scrape_job(workspace_id: str, job_id: str, request: Request, db
         job.max_pages = int(body["max_pages"])
     if "allow_offsite" in body:
         job.allow_offsite = bool(body["allow_offsite"])
+    if "urls" in body or (job.mode == "list" and not job.urls):
+        job.urls = _require_url_list(body.get("urls"))
+        job.base_url = job.urls[0]
+        job.max_pages = len(job.urls)
 
     # Schedule change: recompute next_scrape_at
     if "schedule_interval" in body:
@@ -767,22 +924,7 @@ async def update_scrape_job(workspace_id: str, job_id: str, request: Request, db
     db.refresh(job)
     page_count = db.query(FileModel).filter(FileModel.scrape_job_id == job.id).count()
 
-    return {
-        "id": job.id,
-        "workspace_id": job.workspace_id,
-        "name": job.name,
-        "base_url": job.base_url,
-        "mode": job.mode,
-        "max_depth": job.max_depth,
-        "max_pages": job.max_pages,
-        "allow_offsite": job.allow_offsite,
-        "schedule_interval": job.schedule_interval,
-        "last_scraped_at": job.last_scraped_at.isoformat() if job.last_scraped_at else None,
-        "next_scrape_at": job.next_scrape_at.isoformat() if job.next_scrape_at else None,
-        "is_running": job.is_running,
-        "created_at": job.created_at.isoformat() if job.created_at else None,
-        "page_count": page_count,
-    }
+    return _job_to_dict(job, page_count)
 
 
 @app.delete("/{workspace_id}/scrape/jobs/{job_id}", include_in_schema=False)
@@ -797,6 +939,7 @@ async def delete_scrape_job(workspace_id: str, job_id: str, db: Session = Depend
 
     # Delete all files associated with this job from the RAG backend
     files = db.query(FileModel).filter(FileModel.scrape_job_id == job_id).all()
+    file_map = {f.id: f for f in files}
     results = await asyncio.gather(
         *[_delete_file(f.id, workspace_id) for f in files],
         return_exceptions=True,
@@ -804,6 +947,10 @@ async def delete_scrape_job(workspace_id: str, job_id: str, db: Session = Depend
     for r in results:
         if isinstance(r, Exception):
             print(f"[delete-job] exception during file delete: {r}")
+            continue
+        file_id, success = r
+        if success and file_id in file_map:
+            _delete_debug_file(workspace_id, file_map[file_id].filename)
 
     db.delete(job)  # cascade deletes FileModel rows via ORM
     db.commit()
@@ -847,7 +994,7 @@ async def _process_scraped_url_sse(url, job, existing_files, queue):
             llm_file.name = filename
 
             if DEBUG_UPLOAD_DIR:
-                debug_path = Path(DEBUG_UPLOAD_DIR) / filename
+                debug_path = Path(DEBUG_UPLOAD_DIR) / job.workspace_id / filename
                 debug_path.parent.mkdir(parents=True, exist_ok=True)
                 await asyncio.to_thread(debug_path.write_text, llm_file.getvalue())
 
@@ -916,25 +1063,7 @@ async def _stream_job_run(job_id: str, workspace_id: str, db: Session):
         # Re-discover URLs
         yield f"data: {json.dumps({'status': 'discovering'})}\n\n"
         try:
-            if job.mode == "single":
-                urls, blocked = [job.base_url], []
-            elif job.mode == "prefix":
-                parsed_path = urlparse(job.base_url).path or "/"
-                if not parsed_path.endswith("/"):
-                    parsed_path = parsed_path.rsplit("/", 1)[0] + "/"
-                urls, blocked = await get_links_by_prefix(
-                    job.base_url,
-                    prefixes=[parsed_path],
-                    allow_offsite=job.allow_offsite,
-                    max_pages=job.max_pages,
-                )
-            else:
-                urls, blocked = await get_links_by_depth(
-                    job.base_url,
-                    max_depth=job.max_depth,
-                    allow_offsite=job.allow_offsite,
-                    max_pages=job.max_pages,
-                )
+            urls = await _discover_job_urls(job)
         except Exception as e:
             yield f"data: {json.dumps({'status': 'error', 'message': f'Discovery failed: {str(e)}'})}\n\n"
             job.is_running = False
@@ -956,6 +1085,7 @@ async def _stream_job_run(job_id: str, workspace_id: str, db: Session):
         for source_url, file_rec in list(existing_files.items()):
             if source_url not in url_set:
                 await asyncio.to_thread(LLM_remove_document, workspace_id, file_rec.id)
+                _delete_debug_file(workspace_id, file_rec.filename)
                 db.delete(file_rec)
                 removed_count += 1
                 yield f"data: {json.dumps({'url': source_url, 'status': 'removed'})}\n\n"
@@ -1078,6 +1208,12 @@ async def upload_to_workspace(
         else:
             LLM_File = io.StringIO(content.decode("utf-8"))
 
+        if DEBUG_UPLOAD_DIR:
+            debug_path = Path(DEBUG_UPLOAD_DIR) / workspace_id / file_name
+            debug_path.parent.mkdir(parents=True, exist_ok=True)
+            debug_path.write_text(LLM_File.getvalue())
+            LLM_File.seek(0)
+
         file_location = LLM_upload_document(LLM_File, file_name, workspace.id)
 
         db_file = FileModel(
@@ -1191,3 +1327,140 @@ async def delete_workspace_by_id(workspace_id: str, db: Session = Depends(get_db
     db.delete(workspace)
     db.commit()
     return {"deleted": workspace_id}
+
+
+# ---------------------------------------------------------------------------
+# Debug: rsync between workspace debug folders
+# ---------------------------------------------------------------------------
+
+def _validate_workspace_slug(slug: str) -> None:
+    """Reject slugs with path traversal or shell-unsafe characters."""
+    if not slug or ".." in slug or "/" in slug or "\\" in slug:
+        raise HTTPException(status_code=400, detail=f"Invalid workspace slug: {slug!r}")
+
+
+@app.post("/api/v1/debug/rsync")
+async def debug_rsync(request: Request):
+    """
+    Rsync the debug_uploads folder of one workspace to another.
+
+    Body: { "source_workspace": "<slug>", "destination_workspace": "<slug>" }
+    Passing the same slug for both is a safe no-op (rsync idempotent).
+    Requires X-API-Key header when APP_API_KEY is configured.
+    """
+    if APP_API_KEY and request.headers.get("X-API-Key") != APP_API_KEY:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    if not DEBUG_UPLOAD_DIR:
+        raise HTTPException(status_code=400, detail="DEBUG_UPLOAD_DIR is not configured")
+
+    body = await request.json()
+    source_slug = body.get("source_workspace", "")
+    dest_slug = body.get("destination_workspace", "")
+
+    _validate_workspace_slug(source_slug)
+    _validate_workspace_slug(dest_slug)
+
+    source = Path(DEBUG_UPLOAD_DIR) / source_slug
+    destination = Path(DEBUG_UPLOAD_DIR) / dest_slug
+
+    if not source.exists():
+        raise HTTPException(status_code=404, detail=f"Source workspace folder not found: {source}")
+
+    destination.mkdir(parents=True, exist_ok=True)
+
+    result = subprocess.run(
+        ["rsync", "-a", f"{source}/", f"{destination}/"],
+        capture_output=True,
+        text=True,
+    )
+
+    return {
+        "source": str(source),
+        "destination": str(destination),
+        "returncode": result.returncode,
+        "stdout": result.stdout,
+        "stderr": result.stderr,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Reembed: re-upload all cached .md files for a workspace to the RAG backend
+# ---------------------------------------------------------------------------
+
+@app.post("/api/v1/workspaces/{workspace_id}/reembed")
+async def reembed_workspace(workspace_id: str, request: Request, db: Session = Depends(get_db)):
+    """
+    Re-upload every cached .md file in debug_uploads/{workspace_id}/ back to
+    the RAG backend. Useful for recovering from a wiped backend without user
+    involvement.
+
+    Updates existing FileModel records with the new doc_id. Creates a new
+    record (category='reembedded') for any file not found in the DB.
+    Requires X-API-Key header when APP_API_KEY is configured.
+    """
+    if APP_API_KEY and request.headers.get("X-API-Key") != APP_API_KEY:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    if not DEBUG_UPLOAD_DIR:
+        raise HTTPException(status_code=400, detail="DEBUG_UPLOAD_DIR is not configured")
+
+    workspace = db.query(Workspace).filter(Workspace.id == workspace_id).first()
+    if not workspace:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+
+    workspace_dir = Path(DEBUG_UPLOAD_DIR) / workspace_id
+    if not workspace_dir.exists():
+        raise HTTPException(status_code=404, detail=f"No debug folder found for workspace: {workspace_id}")
+
+    md_files = sorted(workspace_dir.glob("*.md"))
+    if not md_files:
+        return {"reembedded": 0, "failed": []}
+
+    # Build a filename → FileModel lookup for fast matching
+    existing = {
+        f.filename: f
+        for f in db.query(FileModel).filter(FileModel.workspace_id == workspace_id).all()
+    }
+    # Also index by the .md name (for documents stored with original filename)
+    existing_by_md = {
+        Path(f.filename).with_suffix(".md").name: f
+        for f in existing.values()
+    }
+
+    reembedded = 0
+    failed = []
+
+    for md_path in md_files:
+        try:
+            content = md_path.read_text(encoding="utf-8")
+            llm_file = io.StringIO(content)
+            llm_file.name = md_path.name
+
+            new_doc_id = await asyncio.to_thread(
+                LLM_upload_document, llm_file, md_path.name, workspace_id
+            )
+
+            # Find matching DB record (exact .md name, or original filename mapped to .md)
+            rec = existing.get(md_path.name) or existing_by_md.get(md_path.name)
+
+            if rec:
+                rec.id = new_doc_id
+            else:
+                rec = FileModel(
+                    id=new_doc_id,
+                    filename=md_path.name,
+                    original_extension=".md",
+                    workspace_id=workspace_id,
+                    category="reembedded",
+                )
+                db.add(rec)
+
+            db.commit()
+            reembedded += 1
+
+        except Exception as e:
+            print(f"[reembed] failed for {md_path.name}: {e}")
+            failed.append({"file": md_path.name, "error": str(e)})
+
+    return {"reembedded": reembedded, "failed": failed}

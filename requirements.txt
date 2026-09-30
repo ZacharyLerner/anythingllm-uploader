@@ -1,6 +1,6 @@
-aiohttp
 apscheduler
 beautifulsoup4
+curl_cffi
 docling
 fastapi[standard]
 jinja2
